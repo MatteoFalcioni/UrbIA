@@ -9,7 +9,7 @@ from typing import List, Dict, Callable, Any
 from typing_extensions import Annotated
 
 from langchain_core.messages import ToolMessage
-from langchain_core.tools import tool, InjectedToolCallId
+from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
 # Import the shared session manager from tools.py
@@ -280,7 +280,7 @@ if exists:
 )
 async def select_dataset_tool(
     dataset_id: Annotated[str, "The dataset ID from Bologna OpenData"], 
-    tool_call_id: Annotated[str, InjectedToolCallId]
+    runtime: ToolRuntime
 ) -> Command:
     """
     Select and load a dataset into the sandbox.
@@ -312,7 +312,7 @@ async def select_dataset_tool(
                     "messages": [
                         ToolMessage(
                             content=f"Dataset '{dataset_id}' is too large (>2MB) and was not loaded. Consider using a smaller subset or filtering the data via the API first.",
-                            tool_call_id=tool_call_id,
+                            tool_call_id=runtime.tool_call_id,
                         )
                     ]
                 }
@@ -327,7 +327,7 @@ async def select_dataset_tool(
                 "messages": [
                     ToolMessage(
                         content=f"Dataset '{dataset_id}' successfully loaded{source_msg} into sandbox at {path_in_container}. You can now read it with pandas: pd.read_parquet('{path_in_container}')",
-                        tool_call_id=tool_call_id,
+                        tool_call_id=runtime.tool_call_id,
                     )
                 ]
             }
@@ -339,7 +339,7 @@ async def select_dataset_tool(
                 "messages": [
                     ToolMessage(
                         content=f"Failed to load dataset '{dataset_id}': {str(e)}",
-                        tool_call_id=tool_call_id,
+                        tool_call_id=runtime.tool_call_id,
                     )
                 ]
             }

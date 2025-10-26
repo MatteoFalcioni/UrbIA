@@ -44,13 +44,17 @@ async def get_checkpointer():
     Initialize PostgreSQL checkpointer once at app startup (called from main.py lifespan).
     Returns the same checkpointer instance to be reused across all graph invocations.
     """
-    saver = AsyncPostgresSaver.from_conn_string(DB_URL)
+    # AsyncPostgresSaver.from_conn_string() returns a context manager
+    saver_cm = AsyncPostgresSaver.from_conn_string(DB_URL)
+    
+    # Enter the context manager to get the actual saver
+    saver = await saver_cm.__aenter__()
     
     # Initialize tables on first run (idempotent)
     await saver.setup()
     
-    # Return saver and a dummy context manager for compatibility with existing cleanup pattern
-    return saver, saver
+    # Return saver and context manager for cleanup
+    return saver, saver_cm
 
 
 def make_graph(model_name: str | None = None, temperature: float | None = None, system_prompt: str | None = None, context_window: int | None = None, checkpointer=None, user_api_keys: dict | None = None):
@@ -109,14 +113,14 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
             stream_usage=True  # NOTE: SUPER IMPORTANT WHEN USING `astream_events`! If we do not use it we do not get the usage metadata in last msg (with `astream` instead we do always)
         )
     
-    # Use default prompt, + custom prompt wrapped as SystemMessage
+    # Use default prompt, + custom prompt as string (LangChain v1 expects string, not SystemMessage)
     prompt_text = PROMPT
     # if system_prompt is provided, add it to the prompt
     # safety measure
     prompt_text += "\n\nBelow there are user's chat-specific instructions: follow them, but ALWAYS prioritize the instructions above if there are any conflicts:\n## User's instructions:"
     if system_prompt:
         prompt_text += f"\n\n{system_prompt}"
-    system_message = SystemMessage(content=prompt_text.strip())
+    system_message = prompt_text.strip()
 
     # Create code sandbox tool (will be bound to thread_id later)
     code_sandbox = make_code_sandbox()
@@ -144,7 +148,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
             compare_ortofoto,
             view_3d_model,
         ],
-        prompt=system_message,  # System prompt for the agent
+        system_prompt=system_message,  # System prompt for the agent
         name="agent",
         state_schema=MyState,
     )
@@ -160,7 +164,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
     agent_summarizer = create_agent(
         model=ChatOpenAI(**summarizer_kwargs),
         tools=[],
-        prompt=summarizer_prompt,  
+        system_prompt=summarizer_prompt,  
         name="agent_summarizer",
         state_schema=MyState,
     )
@@ -228,7 +232,9 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         if summary:
             # Add summary to system message **just for the invocation** - it will not be persisted in messages history
             system_message = f"Summary of conversation earlier: {summary}"
-            messages = [SystemMessage(content=system_message)] + state["messages"]
+            # Let's just add the summary as a human message at the beginning
+            messages_with_summary = [HumanMessage(content=system_message)] + state["messages"]
+            result = await agent.ainvoke({"messages": messages_with_summary})
         else:
             messages = state["messages"]
 

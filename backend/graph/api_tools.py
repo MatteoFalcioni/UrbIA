@@ -1,6 +1,6 @@
 import json
 from typing_extensions import Annotated
-from langchain_core.tools import tool, InjectedToolCallId
+from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 from backend.opendata_api.helpers import (
@@ -22,7 +22,7 @@ from backend.opendata_api.init_client import client
 )
 async def list_catalog_tool(
     q: Annotated[str, "The dataset search keyword"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     res = await list_catalog(client=client, q=q, limit=15)
     return Command(
@@ -30,7 +30,7 @@ async def list_catalog_tool(
             "messages": [
                 ToolMessage(
                     content=json.dumps(res, ensure_ascii=False),
-                    tool_call_id=tool_call_id,
+                    tool_call_id=runtime.tool_call_id,
                 )
             ]
         }
@@ -43,7 +43,7 @@ async def list_catalog_tool(
 )
 async def preview_dataset_tool(
     dataset_id: Annotated[str, "The dataset ID"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     res = await preview_dataset(client=client, dataset_id=dataset_id, limit=5)
     return Command(
@@ -51,7 +51,7 @@ async def preview_dataset_tool(
             "messages": [
                 ToolMessage(
                     content=json.dumps(res, ensure_ascii=False),
-                    tool_call_id=tool_call_id,
+                    tool_call_id=runtime.tool_call_id,
                 )
             ]
         }
@@ -64,7 +64,7 @@ async def preview_dataset_tool(
 )
 async def get_dataset_description_tool(
     dataset_id: Annotated[str, "The dataset ID"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     desc = await get_dataset_description(client=client, dataset_id=dataset_id)
     return Command(
@@ -72,7 +72,7 @@ async def get_dataset_description_tool(
             "messages": [
                 ToolMessage(
                     content=desc,
-                    tool_call_id=tool_call_id,
+                    tool_call_id=runtime.tool_call_id,
                 )
             ]
         }
@@ -85,7 +85,7 @@ async def get_dataset_description_tool(
 )
 async def get_dataset_fields_tool(
     dataset_id: Annotated[str, "The dataset ID"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     fields = await get_dataset_fields(client=client, dataset_id=dataset_id)
     return Command(
@@ -93,7 +93,7 @@ async def get_dataset_fields_tool(
             "messages": [
                 ToolMessage(
                     content=json.dumps(fields, ensure_ascii=False),
-                    tool_call_id=tool_call_id,
+                    tool_call_id=runtime.tool_call_id,
                 )
             ]
         }
@@ -106,7 +106,7 @@ async def get_dataset_fields_tool(
 )
 async def is_geo_dataset_tool(
     dataset_id: Annotated[str, "The dataset ID"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     res = await is_geo_dataset(client=client, dataset_id=dataset_id)
     return Command(
@@ -114,7 +114,7 @@ async def is_geo_dataset_tool(
             "messages": [
                 ToolMessage(
                     content=json.dumps(res, ensure_ascii=False),
-                    tool_call_id=tool_call_id,
+                    tool_call_id=runtime.tool_call_id,
                 )
             ]
         }
@@ -127,7 +127,7 @@ async def is_geo_dataset_tool(
 )
 async def get_dataset_time_info_tool(
     dataset_id: Annotated[str, "The dataset ID"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     res = await get_dataset_time_info(client=client, dataset_id=dataset_id)
     return Command(
@@ -135,7 +135,7 @@ async def get_dataset_time_info_tool(
             "messages": [
                 ToolMessage(
                     content=json.dumps(res, ensure_ascii=False),
-                    tool_call_id=tool_call_id,
+                    tool_call_id=runtime.tool_call_id,
                 )
             ]
         }

@@ -79,6 +79,23 @@ def to_jsonable(value: Any) -> Any:
     except Exception:
         pass
 
+    # Handle ToolRuntime - don't serialize it, return a placeholder
+    try:
+        if hasattr(value, "__class__") and "ToolRuntime" in str(value.__class__):
+            return {"type": "ToolRuntime", "serialized": False}
+    except Exception:
+        pass
+
+    # Handle dict with ToolRuntime values
+    if isinstance(value, dict):
+        filtered_dict = {}
+        for k, v in value.items():
+            if hasattr(v, "__class__") and "ToolRuntime" in str(v.__class__):
+                filtered_dict[k] = {"type": "ToolRuntime", "serialized": False}
+            else:
+                filtered_dict[k] = to_jsonable(v)
+        return filtered_dict
+
     # Pydantic v2
     try:
         if hasattr(value, "model_dump"):
@@ -893,7 +910,7 @@ async def post_message_stream(
                     # Stream tool execution start
                     elif event_type == "on_tool_start":
                         tool_input = event.get("data", {}).get("input")
-                        yield f"data: {json.dumps({'type': 'tool_start', 'name': event_name, 'input': tool_input})}\n\n"
+                        yield f"data: {json.dumps({'type': 'tool_start', 'name': event_name, 'input': to_jsonable(tool_input)})}\n\n"
                         
                     # Stream tool execution end and capture for persistence
                     elif event_type == "on_tool_end":   

@@ -9,6 +9,7 @@ httpx[http2]
 pytest
 pytest-asyncio
 langgraph
+langchain
 langchain-openai
 langchain-anthropic
 langgraph-checkpoint-postgres

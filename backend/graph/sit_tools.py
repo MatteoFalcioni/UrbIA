@@ -3,7 +3,7 @@ import tempfile
 from typing import Optional, List
 from typing_extensions import Annotated
 from langgraph.types import Command
-from langchain_core.tools import InjectedToolCallId, tool
+from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from pathlib import Path
 from folium.plugins import DualMap
@@ -68,7 +68,7 @@ def folium_ortho_fn(year, bbox=None, zoom_start=16, save_path: Optional[Path]=No
 # bbox: (min_lon, min_lat, max_lon, max_lat) in WGS84
 async def folium_ortho(
     year: Annotated[int, "year of reference"], 
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
     query: Optional[Annotated[str, "query to get the ortofoto of a specific location"]]=None,
     )-> Command:
 
@@ -88,7 +88,7 @@ async def folium_ortho(
                     "messages": [
                         ToolMessage(
                             content=f"Error getting coordinates of the location: {e}",
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -123,7 +123,7 @@ async def folium_ortho(
             new_host_files=[temp_path],
             session_id=session_id,
             run_id=f"ortofoto_{year}",
-            tool_call_id=tool_call_id
+            tool_call_id=runtime.tool_call_id
         )
         
         # ingest_files automatically deletes the temp file, so no cleanup needed
@@ -143,7 +143,7 @@ async def folium_ortho(
                         ToolMessage(
                             content=f"Ortofoto {year} map generated successfully",
                             artifact=[structured_artifact],
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -154,7 +154,7 @@ async def folium_ortho(
                     "messages": [
                         ToolMessage(
                             content=f"Failed to process ortofoto {year} map",
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -166,7 +166,7 @@ async def folium_ortho(
                 "messages": [
                     ToolMessage(
                         content=f"Error generating ortofoto {year}: {str(e)}",
-                        tool_call_id=tool_call_id
+                        tool_call_id=runtime.tool_call_id
                     )
                 ]
             }
@@ -275,7 +275,7 @@ async def compare_ortofoto(
     left_year: Annotated[int, "left ortofoto year"],
     right_year: Annotated[int, "right ortofoto year"],
     query: Optional[Annotated[str, "name of the location to center the ortofoto around"]]=None,
-    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    runtime: ToolRuntime = None,
 ) -> Command:
     """
     Returns a ToolMessage with:
@@ -299,7 +299,7 @@ async def compare_ortofoto(
                     "messages": [
                         ToolMessage(
                             content=f"Error getting coordinates of the location: {e}",
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -339,7 +339,7 @@ async def compare_ortofoto(
             new_host_files=[temp_path],
             session_id=session_id,
             run_id=f"compare_ortofoto_dual_{left_year}_vs_{right_year}",
-            tool_call_id=tool_call_id,
+            tool_call_id=runtime.tool_call_id,
         )
         # ingest_files auto-deletes temp file
 
@@ -364,7 +364,7 @@ async def compare_ortofoto(
                         ToolMessage(
                             content=message,
                             artifact=[artifact_struct],
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -380,7 +380,7 @@ async def compare_ortofoto(
                     "messages": [
                         ToolMessage(
                             content=message,
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -392,7 +392,7 @@ async def compare_ortofoto(
                 "messages": [
                     ToolMessage(
                         content=f"Error generating ortofoto {left_year} (left) vs {right_year} (right) map: {str(e)}",
-                        tool_call_id=tool_call_id
+                        tool_call_id=runtime.tool_call_id
                     )
                 ]
             }
@@ -453,7 +453,7 @@ def _create_bologna_3d_html() -> str:
     ),
 )
 async def view_3d_model(
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     """
     Generate an interactive 3D model viewer for Bologna.
@@ -484,7 +484,7 @@ async def view_3d_model(
             new_host_files=[temp_path],
             session_id=session_id,
             run_id="bologna_3d_model",
-            tool_call_id=tool_call_id
+            tool_call_id=runtime.tool_call_id
         )
         # ingest_files automatically deletes the temp file
         
@@ -503,7 +503,7 @@ async def view_3d_model(
                         ToolMessage(
                             content="Bologna 3D model viewer generated successfully. You can now explore the city in 3D.",
                             artifact=[artifact_struct],
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -514,7 +514,7 @@ async def view_3d_model(
                     "messages": [
                         ToolMessage(
                             content="Failed to generate the 3D model viewer",
-                            tool_call_id=tool_call_id
+                            tool_call_id=runtime.tool_call_id
                         )
                     ]
                 }
@@ -526,7 +526,7 @@ async def view_3d_model(
                 "messages": [
                     ToolMessage(
                         content=f"Error generating 3D model viewer: {str(e)}",
-                        tool_call_id=tool_call_id
+                        tool_call_id=runtime.tool_call_id
                     )
                 ]
             }

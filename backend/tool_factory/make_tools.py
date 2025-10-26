@@ -6,7 +6,7 @@ from typing import Callable, Optional, Awaitable, Any
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing_extensions import Annotated
-from langchain_core.tools import tool, InjectedToolCallId
+from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 import os
@@ -49,13 +49,13 @@ def make_code_sandbox_tool(
 
     class ExecuteCodeArgs(BaseModel):
         code: str = Field(description="Python code to execute in the sandbox.")
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
         model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # The implementation closes over session_manager, session_key_fn
     async def _impl(
         code: Annotated[str, "Python code to run"],
-        tool_call_id: Annotated[str, InjectedToolCallId],
+        runtime: ToolRuntime,
     ) -> Command:
 
         sid = session_key_fn()
@@ -73,7 +73,7 @@ def make_code_sandbox_tool(
 
         # Execute code - no dataset loading here anymore
         result = await session_manager.exec(
-            sid, code, timeout=timeout_s, db_session=db_session, thread_id=thread_id, tool_call_id=tool_call_id
+            sid, code, timeout=timeout_s, db_session=db_session, thread_id=thread_id, tool_call_id=runtime.tool_call_id
         )
 
         payload = {
@@ -125,12 +125,12 @@ def make_code_sandbox_tool(
             tool_msg = ToolMessage(
                 content=content,
                 artifact=structured_artifacts,  
-                tool_call_id=tool_call_id,
+                tool_call_id=runtime.tool_call_id,
             )
         else:
             tool_msg = ToolMessage(
                 content=content,
-                tool_call_id=tool_call_id,
+                tool_call_id=runtime.tool_call_id,
             )
         return Command(update={"messages": [tool_msg]})
 
@@ -172,12 +172,12 @@ def make_select_dataset_tool(
     
     class SelectDatasetArgs(BaseModel):
         dataset_id: Annotated[str, Field(description="The dataset ID")]
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
         model_config = ConfigDict(arbitrary_types_allowed=True)
     
     async def _impl(
         dataset_id: Annotated[str, "The dataset ID"], 
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
     ) -> Command:
         """Select and load a dataset into the sandbox."""
         try:
@@ -232,7 +232,7 @@ def make_select_dataset_tool(
                         "messages": [
                             ToolMessage(
                                 content=f"Dataset '{dataset_id}' successfully loaded into sandbox at {path_in_container}",
-                                tool_call_id=tool_call_id,
+                                tool_call_id=runtime.tool_call_id,
                             )
                         ]
                     }
@@ -243,7 +243,7 @@ def make_select_dataset_tool(
                         "messages": [
                             ToolMessage(
                                 content=f"Failed to load dataset '{dataset_id}' - no datasets were loaded",
-                                tool_call_id=tool_call_id,
+                                tool_call_id=runtime.tool_call_id,
                             )
                         ]
                     }
@@ -255,7 +255,7 @@ def make_select_dataset_tool(
                     "messages": [
                         ToolMessage(
                             content=f"Failed to load dataset '{dataset_id}': {str(e)}",
-                            tool_call_id=tool_call_id,
+                            tool_call_id=runtime.tool_call_id,
                         )
                     ]
                 }
@@ -295,12 +295,12 @@ def make_export_datasets_tool(
     
     class ExportDatasetArgs(BaseModel):
         container_path: Annotated[str, Field(description="Path to file inside container (e.g., '/to_export/<name>.parquet')")]
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
         model_config = ConfigDict(arbitrary_types_allowed=True)
     
     async def _impl(
         container_path: Annotated[str, "Path to file inside container in the to_export/ directory (e.g., '/to_export/<name>.parquet')"], 
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
     ) -> Command:
         """Export a file from container to host filesystem."""
         session_key = session_key_fn()
@@ -321,7 +321,7 @@ def make_export_datasets_tool(
             container_path,
             db_session=db_session,
             thread_id=thread_id,
-            tool_call_id=tool_call_id
+            tool_call_id=runtime.tool_call_id
         )
         
         if result["success"]:
@@ -340,12 +340,12 @@ def make_export_datasets_tool(
                     f"  Host path: {result['host_path']}"
                 ),
                 artifact=structured_artifacts,  # Add artifact field like code_exec does
-                tool_call_id=tool_call_id,
+                tool_call_id=runtime.tool_call_id,
             )
         else:
             tool_msg = ToolMessage(
                 content=f"Failed to export dataset: {result['error']}",
-                tool_call_id=tool_call_id,
+                tool_call_id=runtime.tool_call_id,
             )
         
         return Command(update={"messages": [tool_msg]})
@@ -383,11 +383,11 @@ def make_list_datasets_tool(
     """
     
     class ListDatasetsArgs(BaseModel):
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
         model_config = ConfigDict(arbitrary_types_allowed=True)
     
     async def _impl(
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        runtime: ToolRuntime
     ) -> Command:
         """List all datasets in the sandbox."""
         import os
@@ -420,7 +420,7 @@ def make_list_datasets_tool(
                     "messages": [
                         ToolMessage(
                             content="No datasets available - sandbox is in NONE mode",
-                            tool_call_id=tool_call_id,
+                            tool_call_id=runtime.tool_call_id,
                         )
                     ]
                 }
@@ -540,7 +540,7 @@ print(json.dumps(result, indent=2))
                 "messages": [
                     ToolMessage(
                         content=content,
-                        tool_call_id=tool_call_id,
+                        tool_call_id=runtime.tool_call_id,
                     )
                 ]
             }

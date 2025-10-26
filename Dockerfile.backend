@@ -14,8 +14,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Docker SDK for Python (to manage sandbox containers)
-RUN pip install --no-cache-dir docker
+# Docker SDK is already installed via requirements.txt
 
 # Copy backend code
 COPY backend/ ./backend/

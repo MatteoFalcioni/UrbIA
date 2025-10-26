@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     saver, cm = await get_checkpointer()
     _checkpointer_cm = (saver, cm)  # Store as tuple for easy access
     yield
-    # Cleanup: close checkpointer if needed
+    # Cleanup: close checkpointer context manager
     if hasattr(cm, "__aexit__"):
         await cm.__aexit__(None, None, None)
 
