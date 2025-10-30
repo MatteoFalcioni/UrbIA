@@ -20,7 +20,7 @@ Transition from Docker-based local development to scalable cloud infrastructure:
 
 Ingestion pipeline will be greatly simplified: Modal will manage all artifacts uploads to S3 (see later on, point 2.4)
 
-### 1.1 Modal Setup & Configuration
+### 1.1 Modal Setup & Configuration (DONE)
 
 **Files to create**:
 
@@ -49,7 +49,7 @@ AWS_REGION=eu-central-1
 S3_BUCKET=lg-urban-prod  # Single bucket for both input and output
 ```
 
-### 1.2 Build Modal Image with Dependencies
+### 1.2 Build Modal Image with Dependencies (DONE)
 
 **Create** `backend/modal_runtime/requirements.txt`:
 
@@ -86,7 +86,7 @@ app = modal.App("lg-urban-executor")
 volume = modal.Volume.from_name("lg-urban-workspace", create_if_missing=True)
 ```
 
-### 1.3 Implement Stateful Code Executor with Modal Sandbox
+### 1.3 Implement Stateful Code Executor with Modal Sandbox (DONE)
 
 **Modal approach**: Use `modal.Sandbox.create()` with a driver program for stateful execution.
 
@@ -239,7 +239,7 @@ class SandboxExecutor:
 - Artifacts auto-detected in `/workspace/artifacts/`
 - Direct S3 upload from backend (sandbox returns artifact metadata only)
 
-### 1.4 Implement Dataset Selection Tool
+### 1.4 Implement Dataset Selection Tool (DONE)
 
 **Create Modal function** in `backend/modal_runtime/tools.py`:
 
@@ -253,7 +253,7 @@ class SandboxExecutor:
 
 - Return path in workspace
 
-### 1.5 Implement Export Tool
+### 1.5 Implement Export Tool (DONE)
 
 **Create Modal function** in `backend/modal_runtime/tools.py`:
 
@@ -262,7 +262,7 @@ class SandboxExecutor:
 - Upload to S3 bucket with timestamp prefix
 - Return S3 presigned URL (24h expiry- or  maybe more)
 
-### 1.6 Implement List Files Tool
+### 1.6 Implement List Files Tool (DONE)
 
 **Create Modal function** in `backend/modal_runtime/tools.py`:
 

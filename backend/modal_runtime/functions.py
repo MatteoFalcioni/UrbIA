@@ -27,7 +27,7 @@ def _walk_files(base: Path, exts: set) -> List[Path]:
     volumes={"/workspace": WORKSPACE_VOLUME},
     timeout=60,
 )
-def list_loaded_datasets(workspace_path: str = "/workspace", subdir: str = "datasets") -> List[Dict[str, Any]]:
+def list_available_datasets(workspace_path: str = "/workspace", subdir: str = "datasets") -> List[Dict[str, Any]]:
     """
     List datasets in the workspace. Return structured metadata.
     """

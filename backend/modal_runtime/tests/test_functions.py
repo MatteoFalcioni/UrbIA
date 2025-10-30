@@ -15,7 +15,7 @@ _check_modal_tokens()
 @app.local_entrypoint()  # used in order to run `modal run test_functions.py` from shell
 def test_dataset_functions_flow_write_list_then_optional_export():
 
-    from backend.modal_runtime.functions import write_dataset_bytes, list_loaded_datasets, export_dataset
+    from backend.modal_runtime.functions import write_dataset_bytes, list_available_datasets, export_dataset
 
     # Prepare a tiny CSV
     csv_data = b"a,b\n1,2\n3,4\n"
@@ -36,7 +36,7 @@ def test_dataset_functions_flow_write_list_then_optional_export():
     found = False
     names = set()
     for _ in range(10):  # up to ~5s
-        files = list_loaded_datasets.remote()
+        files = list_available_datasets.remote()
         names = {f.get("path") for f in files}
         if "unit.csv" in names:
             found = True
