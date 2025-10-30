@@ -12,7 +12,7 @@ from pathlib import Path
 def scan_and_upload_artifacts(processed_artifacts: set, s3_bucket: str, s3_client):
     """Scan workspace for new artifacts and upload to S3."""
     artifacts = []
-    artifacts_dir = Path("/workspace/artifacts")
+    artifacts_dir = Path(os.getenv("ARTIFACTS_DIR", "/workspace/artifacts"))
     
     if not artifacts_dir.exists():
         return artifacts
