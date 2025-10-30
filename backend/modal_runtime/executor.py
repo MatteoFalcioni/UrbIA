@@ -4,6 +4,7 @@ from typing import Dict, Any
 
 # Import the Modal app and image from app.py
 from .app import app, image
+from .session import get_session_id, volume_name
 
 class SandboxExecutor:
     """Manages per-session Modal Sandboxes with persistent state."""
@@ -13,7 +14,7 @@ class SandboxExecutor:
         
         # Create per-session volume for persistent workspace
         self.volume = modal.Volume.from_name(
-            f"lg-urban-session-{session_id}", 
+            volume_name(), 
             create_if_missing=True
         )
         
@@ -22,7 +23,7 @@ class SandboxExecutor:
             image=image,
             timeout=60*60*2,  # 2 hours session timeout
             idle_timeout=60*10,  # 10 min idle timeout
-            volumes={"/workspace": self.volume},
+            volumes={"/workspace": self.volume},  # link it to above volume
             workdir="/workspace"
         )
         

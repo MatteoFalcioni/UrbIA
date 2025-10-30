@@ -22,6 +22,9 @@ def scan_and_upload_artifacts(processed_artifacts: set, s3_bucket: str, s3_clien
     
     for file_path in artifacts_dir.rglob("*"):
         if file_path.is_file():
+            dataset_exts = {".csv", ".parquet", ".xlsx", ".xls"}
+            if file_path.suffix.lower() in dataset_exts:
+                continue  # datasets are exported explicitly via tools
             try:
                 # Compute SHA-256
                 sha256 = hashlib.sha256(file_path.read_bytes()).hexdigest()
