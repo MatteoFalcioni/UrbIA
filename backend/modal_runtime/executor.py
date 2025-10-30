@@ -3,34 +3,38 @@ import json
 from typing import Dict, Any
 
 # Import the Modal app and image from app.py
-from .app import app, image
-from .session import get_session_id, volume_name
+from .app import image
+from .session import volume_name, session_base_dir
 
 class SandboxExecutor:
     """Manages per-session Modal Sandboxes with persistent state."""
     
     def __init__(self, session_id: str):
+
         self.session_id = session_id
-        
         # Create per-session volume for persistent workspace
         self.volume = modal.Volume.from_name(
             volume_name(), 
             create_if_missing=True
         )
-        
+        base_dir = session_base_dir(session_id)
+        # Important: fixed sandbox creation by hydrating the Modal App inline (required outside Modal containers).
+        hydrated_app = modal.App.lookup("lg-urban-executor", create_if_missing=True)
         self.sandbox = modal.Sandbox.create(
-            app=app,
+            app=hydrated_app,
             image=image,
             timeout=60*60*2,  # 2 hours session timeout
             idle_timeout=60*10,  # 10 min idle timeout
             volumes={"/workspace": self.volume},  # link it to above volume
-            workdir="/workspace"
+            workdir=base_dir  # NEW: per session cwd
         )
+
+        # ensure per-session dir exists before starting the driver
+        self.sandbox.exec("mkdir", "-p", base_dir).wait()
         
-        # CRITICAL: bufsize=1 for line buffering!
         self.process = self.sandbox.exec(
             "python", "/root/driver.py",
-            bufsize=1  # ← Line buffering essenziale!
+            bufsize=1  # CRITICAL: bufsize=1 for line buffering!
         )
     
     def execute(self, code: str, timeout: int = 120) -> Dict[str, Any]:

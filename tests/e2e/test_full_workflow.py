@@ -68,7 +68,7 @@ class TestEndToEndWorkflow:
             "artifacts": [{
                 "name": "test_plot.png",
                 "mime": "image/png",
-                "url": "/api/artifacts/123?token=abc",
+                "url": "/api/artifacts/123",
                 "size": 12345
             }]
         }
@@ -97,7 +97,7 @@ class TestEndToEndWorkflow:
         """Test artifact download functionality."""
         # This would require setting up actual artifacts in the database
         # For now, just test the endpoint exists
-        response = await client.get("/api/artifacts/nonexistent?token=invalid")
+        response = await client.get("/api/artifacts/nonexistent")
         assert response.status_code == 404  # Expected for non-existent artifact
     
     @pytest.mark.asyncio

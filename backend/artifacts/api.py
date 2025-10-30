@@ -1,15 +1,13 @@
 # backend/artifacts/api.py
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, HTTPException, Query, Depends
-from fastapi.responses import FileResponse, JSONResponse
-from pathlib import Path
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.session import get_session
 
-from .storage import get_artifact_by_id, get_artifact_blob_path
-from .tokens import verify_token
+from .storage import get_artifact_by_id, generate_artifact_download_url
 
 router = APIRouter(prefix="/artifacts", tags=["artifacts"])
 
@@ -17,24 +15,14 @@ router = APIRouter(prefix="/artifacts", tags=["artifacts"])
 @router.get("/{artifact_id}")
 async def download_artifact(
     artifact_id: str,
-    token: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ):
     """
     Download an artifact by ID.
     
-    Requires a valid token for authentication.
-    Streams the file from the content-addressed blobstore.
+    Server-side should authorize access. Redirect to a presigned S3 URL.
     """
-    # 1) Verify token (artifact_id must match)
-    try:
-        data = verify_token(token)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    if data["artifact_id"] != artifact_id:
-        raise HTTPException(status_code=403, detail="Token does not match artifact")
-
-    # 2) Look up artifact in PostgreSQL
+    # 1) Look up artifact in PostgreSQL
     try:
         artifact_uuid = uuid.UUID(artifact_id)
     except ValueError:
@@ -44,50 +32,25 @@ async def download_artifact(
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    # 3) Resolve blob on disk
-    blob_path = get_artifact_blob_path(artifact)
-    if not blob_path.exists():
-        raise HTTPException(status_code=410, detail="Blob missing (pruned?)")
-
-    # 4) Stream it
-    # For HTML and images, display inline. For other files, download.
-    inline_mimes = ["text/html", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"]
-    
-    response = FileResponse(
-        path=str(blob_path),
-        media_type=artifact.mime or "application/octet-stream",
-    )
-    
-    # Set Content-Disposition header
-    if artifact.mime in inline_mimes:
-        response.headers["Content-Disposition"] = "inline"
-    else:
-        response.headers["Content-Disposition"] = f'attachment; filename="{artifact.filename or artifact_id}"'
-    
-    return response
+    # 2) Always use S3 presigned redirect in the new workflow
+    try:
+        url = generate_artifact_download_url(artifact)
+        return RedirectResponse(url=url, status_code=302)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"S3 presign failed: {e}")
 
 
 @router.get("/{artifact_id}/head")
 async def head_artifact(
     artifact_id: str,
-    token: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ):
     """
     Get artifact metadata without downloading the file.
     
-    Requires a valid token for authentication.
     Returns artifact metadata (size, mime type, SHA-256, etc.)
     """
-    # 1) Verify token (artifact_id must match)
-    try:
-        data = verify_token(token)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    if data["artifact_id"] != artifact_id:
-        raise HTTPException(status_code=403, detail="Token does not match artifact")
-
-    # 2) Look up artifact in PostgreSQL
+    # 1) Look up artifact in PostgreSQL
     try:
         artifact_uuid = uuid.UUID(artifact_id)
     except ValueError:

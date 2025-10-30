@@ -2,17 +2,16 @@
 import hashlib
 import mimetypes
 from pathlib import Path
+import os
 from typing import List, Dict, Any
 
 import modal
 import pandas as pd
 
-app = modal.App("lg-urban-executor")
-image = modal.Image.debian_slim(python_version="3.11")\
-    .pip_install_from_requirements("backend/modal_runtime/requirements.txt")\
-    .add_local_file("backend/modal_runtime/driver.py", "/root/driver.py")
-
-WORKSPACE_VOLUME = modal.Volume.from_name("lg-urban", create_if_missing=True)
+# Import the Modal app from app.py
+from .app import app, image
+from .session import volume_name
+WORKSPACE_VOLUME = modal.Volume.from_name(volume_name(), create_if_missing=True)
 
 def _walk_files(base: Path, exts: set) -> List[Path]:
     files = []
@@ -22,22 +21,29 @@ def _walk_files(base: Path, exts: set) -> List[Path]:
                 files.append(p)
     return files
 
+def _session_base(session_id: str) -> Path:
+    """Resolve per-session base dir; session_id must be provided by caller."""
+    return Path("/workspace") / "sessions" / session_id
+
 @app.function(
     image=image,
     volumes={"/workspace": WORKSPACE_VOLUME},
     timeout=60,
 )
-def list_loaded_datasets(workspace_path: str = "/workspace", subdir: str = "datasets") -> List[Dict[str, Any]]:
+def list_loaded_datasets(
+    session_id: str,
+    subdir: str = "datasets"
+) -> List[Dict[str, Any]]:
     """
     List datasets in the workspace. Return structured metadata.
     """
-    datasets_dir = Path(workspace_path) / subdir
+    base = _session_base(session_id) / subdir
 
     exts = {".csv", ".parquet", ".xlsx", ".xls"}
     out: List[Dict[str, Any]] = []
-    for p in _walk_files(datasets_dir, exts):
+    for p in _walk_files(base, exts):
         stat = p.stat()
-        rel = str(p.relative_to(datasets_dir))
+        rel = str(p.relative_to(base))
         out.append({
             "path": rel,
             "size_bytes": stat.st_size,
@@ -53,15 +59,17 @@ def list_loaded_datasets(workspace_path: str = "/workspace", subdir: str = "data
     timeout=180,
     secrets=[modal.Secret.from_name("aws-credentials-IAM")],  # store AWS creds in Modal
 )
-def export_dataset(dataset_path: str,
-                   bucket: str,
-                   workspace_path: str = "/workspace") -> Dict[str, Any]:
+def export_dataset(
+    dataset_path: str,
+    bucket: str,
+    session_id: str
+) -> Dict[str, Any]:
     """
     Upload a file from the Modal workspace to S3 and return metadata.
     """
     import boto3
 
-    base = Path(workspace_path)
+    base = _session_base(session_id)
     full = base / dataset_path
     if not full.exists():
         return {"error": f"File not found: {dataset_path}"}
@@ -99,16 +107,30 @@ def export_dataset(dataset_path: str,
     volumes={"/workspace": WORKSPACE_VOLUME},
     timeout=180,
 )
-def write_dataset_bytes(dataset_id: str, data_b64: str, ext: str = "parquet", subdir: str = "datasets") -> Dict[str, Any]:
+def write_dataset_bytes(
+    dataset_id: str,
+    data_b64: str,
+    session_id: str,
+    ext: str = "parquet",
+    subdir: str = "datasets",
+) -> Dict[str, Any]:
     import base64
 
     data = base64.b64decode(data_b64)
-    datasets_dir = Path("/workspace") / subdir
+    base_dir = _session_base(session_id)
+    datasets_dir = base_dir / subdir
     datasets_dir.mkdir(parents=True, exist_ok=True)
 
     filename = f"{dataset_id}.{ext.lstrip('.')}"
     path = datasets_dir / filename
     path.write_bytes(data)
+    # Ensure contents are flushed to the volume before returning
+    try:
+        with open(path, "rb", buffering=0) as fh:
+            import os as _os
+            _os.fsync(fh.fileno())
+    except Exception:
+        pass
 
     mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     size = path.stat().st_size
@@ -116,7 +138,7 @@ def write_dataset_bytes(dataset_id: str, data_b64: str, ext: str = "parquet", su
     summary: Dict[str, Any] = {
         "dataset_id": dataset_id,
         "path": str(path),
-        "rel_path": str(path.relative_to(Path("/workspace"))),
+        "rel_path": str(path.relative_to(base_dir)),
         "mime": mime,
         "size_bytes": size,
         "size_mb": round(size / (1024 * 1024), 3),

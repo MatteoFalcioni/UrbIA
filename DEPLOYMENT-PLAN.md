@@ -374,7 +374,7 @@ modal secret create aws-credentials \
   AWS_REGION=eu-central-1
 ```
 
-### 2.4 Simplify Artifact Ingestion Pipeline  
+### 2.4 Simplify Artifact Ingestion Pipeline (DONE)
 
 **Key simplification**: Modal handles all file operations. Backend only stores metadata.
 
@@ -430,7 +430,7 @@ modal secret create aws-credentials \
 - **Remove**: All filesystem operations (`Path`, `copy`, `delete` functions)
 - **Keep**: Database query helpers (`get_artifact_by_id`, `find_artifact_by_sha`)
 
-### 2.5 Implement S3 Presigned URLs
+### 2.5 Implement S3 Presigned URLs (DONE)
 
 **Modify** `backend/artifacts/api.py`:
 

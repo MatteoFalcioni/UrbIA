@@ -17,6 +17,7 @@ def test_dataset_functions_flow_write_list_then_optional_export():
 
     from backend.modal_runtime.functions import write_dataset_bytes, list_loaded_datasets, export_dataset
 
+    session_id = "test-session"
     # Prepare a tiny CSV
     csv_data = b"a,b\n1,2\n3,4\n"
     b64 = base64.b64encode(csv_data).decode("ascii")
@@ -25,7 +26,7 @@ def test_dataset_functions_flow_write_list_then_optional_export():
     print("Running in sandbox")
     
     # 1) Write into sandbox under /workspace/datasets/unit.csv
-    res = write_dataset_bytes.remote(dataset_id="unit", data_b64=b64, ext="csv")
+    res = write_dataset_bytes.remote(dataset_id="unit", data_b64=b64, session_id=session_id, ext="csv")
     assert res["dataset_id"] == "unit"
     assert res["rel_path"].endswith("datasets/unit.csv")
     assert res.get("columns") == ["a", "b"]
@@ -36,8 +37,8 @@ def test_dataset_functions_flow_write_list_then_optional_export():
     import time
     found = False
     names = set()
-    for _ in range(10):  # up to ~5s
-        files = list_loaded_datasets.remote()
+    for _ in range(20):  # up to ~10s to allow Volume sync
+        files = list_loaded_datasets.remote(session_id=session_id)
         names = {f.get("path") for f in files}
         if "unit.csv" in names:
             found = True
@@ -49,6 +50,6 @@ def test_dataset_functions_flow_write_list_then_optional_export():
     # 3) Optionally export to S3 if creds and bucket are configured
     have_s3 = bool(os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY") and os.getenv("S3_BUCKET"))
     if have_s3:
-        uploaded = export_dataset.remote("datasets/unit.csv", bucket=os.environ["S3_BUCKET"])
+        uploaded = export_dataset.remote("datasets/unit.csv", bucket=os.environ["S3_BUCKET"], session_id=session_id)
         assert uploaded.get("s3_key") and uploaded.get("s3_url")
         print("Uploaded to S3 Successfully! URL: ", uploaded.get("s3_url"))
