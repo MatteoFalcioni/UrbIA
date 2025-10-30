@@ -36,15 +36,15 @@ It only has 2 methods:
 
 Inside the [tests/](./tests/) folder we wrote basic tests to check the implementation:
 
-- `test_driver_artifacts.py`: unit tests for `scan_and_upload_artifacts` in the driver using a `FakeS3Client`.
-  - Verifica upload e metadati (chiavi content-addressed, url, mime, size)
-  - Verifica idempotenza/dedup alla seconda scansione
+- `test_driver_artifacts.py`: unit tests for the `scan_and_upload_artifacts` function in the driver, using a `FakeS3Client`.
+  - Verifies upload and metadata (content-addressed keys, url, mime type, size)
+  - Verifies idempotency/deduplication on a second scan
 
-- `test_driver_e2e.py`: test end-to-end leggero che avvia `driver.py` in un subprocess e comunica via stdin/stdout.
-  - Verifica persistenza dello stato con `exec(code, globals_dict)` (esempio: `x=41` poi `print(x+1)`)
-  - Usa `ARTIFACTS_DIR` temporaneo per evitare upload a S3 durante il test
+- `test_driver_e2e.py`: a lightweight end-to-end test that runs `driver.py` in a subprocess and communicates via stdin/stdout.
+  - Verifies persistent Python state with `exec(code, globals_dict)` (example: define `x=41` then `print(x+1)`)
+  - Uses a temporary `ARTIFACTS_DIR` to avoid uploading to S3 during the test
 
-- `test_code_exec.py`: placeholder per futuri test del `SandboxExecutor` (instanziazione, esecuzione e terminate).  
+- `test_code_exec.py`: tests the full `SandboxExecutor` class (instantiation, execution, and termination).
 
 ### Run tests
 

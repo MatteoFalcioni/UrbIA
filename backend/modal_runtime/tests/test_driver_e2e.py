@@ -13,30 +13,44 @@ def run_driver_with_commands(commands, env=None, timeout=5):
     modal_runtime_dir = here.parents[1]
     driver_path = modal_runtime_dir / "driver.py"
 
+    # Ensure Python outputs are unbuffered
+    full_env = env.copy() if env else os.environ.copy()
+    full_env["PYTHONUNBUFFERED"] = "1"
+
     proc = subprocess.Popen(
         [sys.executable, "-u", str(driver_path)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env=env,
+        bufsize=1,  # Line buffered
+        env=full_env,
     )
 
     try:
         outputs = []
         for cmd in commands:
+            # Write command
             proc.stdin.write(json.dumps(cmd) + "\n")
             proc.stdin.flush()
-            line = proc.stdout.readline().strip()
-            outputs.append(json.loads(line))
+            
+            # Read response
+            line = proc.stdout.readline()
+            if not line:
+                raise RuntimeError("Driver process ended unexpectedly")
+            
+            outputs.append(json.loads(line.strip()))
+        
         return outputs
     finally:
-        # Gracefully close stdin so the driver loop can exit or be killed
+        # Gracefully close stdin so the driver loop can exit
         try:
             proc.stdin.close()
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
         except Exception:
-            pass
-        proc.kill()
+            proc.kill()
 
 
 def test_driver_state_persists_and_stdout_roundtrip():
