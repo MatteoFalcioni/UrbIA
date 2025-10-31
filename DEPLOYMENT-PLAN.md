@@ -270,7 +270,7 @@ class SandboxExecutor:
 - List available datasets in S3 bucket together with files in `/workspace/` (Modal Volume)
 - Return file metadata (name, size, modified time)
 
-### 1.7 Refactor LangGraph Tools
+### 1.7 Refactor LangGraph Tools  (DONE)
 
 **Modify** `backend/tool_factory/make_tools.py`:
 

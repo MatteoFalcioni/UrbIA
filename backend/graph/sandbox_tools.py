@@ -5,17 +5,45 @@ from __future__ import annotations
 import os
 import json
 import base64
+from typing import Dict
 from typing_extensions import Annotated
 
 from langchain_core.messages import ToolMessage
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
-from backend.modal_runtime.functions import list_loaded_datasets, export_dataset, write_dataset_bytes
+import modal
+
 from backend.opendata_api.helpers import is_dataset_too_heavy, get_dataset_bytes  # change heavy detection this to be more reliable
 from backend.opendata_api.init_client import client
 from backend.modal_runtime.executor import SandboxExecutor
 from backend.graph.context import get_thread_id
+
+# Lookup deployed Modal functions (using from_name)
+def _get_modal_function(name: str):
+    """Get a deployed Modal function by name."""
+    try:
+        return modal.Function.from_name("lg-urban-executor", name)
+    except Exception:
+        # Fallback to import for local development
+        raise Exception(f"Modal function {name} not found")
+
+# Session-based executor cache: one sandbox per session
+_executor_cache: Dict[str, SandboxExecutor] = {}
+
+
+def get_or_create_executor(session_id: str) -> SandboxExecutor:
+    """Get existing executor for session or create new one."""
+    if session_id not in _executor_cache:
+        _executor_cache[session_id] = SandboxExecutor(session_id=session_id)
+    return _executor_cache[session_id]
+
+
+def terminate_session_executor(session_id: str) -> None:
+    """Terminate and cleanup executor for a session."""
+    if session_id in _executor_cache:
+        executor = _executor_cache.pop(session_id)
+        executor.terminate()
 
 
 @tool(
@@ -25,11 +53,15 @@ from backend.graph.context import get_thread_id
 def execute_code_tool(code: Annotated[str, "The python code to execute."],
                  runtime: ToolRuntime) -> Command:
     """Use this to execute python code."""
-    session_id = get_thread_id()
-    result = SandboxExecutor(session_id=session_id).execute(code)
+    session_id = str(get_thread_id())
+    executor = get_or_create_executor(session_id)
+    result = executor.execute(code)
 
     # wrap the result in a ToolMessage
-    return Command(update={"messages": [ToolMessage(content=result, tool_call_id=runtime.tool_call_id)]})
+    return Command(update={"messages": [ToolMessage(
+        content=json.dumps(result, ensure_ascii=False), 
+        tool_call_id=runtime.tool_call_id
+    )]})
 
 @tool(
     name_or_callable="load_dataset",
@@ -73,7 +105,8 @@ async def load_dataset_tool(
         data_bytes = await get_dataset_bytes(client=client, dataset_id=dataset_id)
     
     # write into modal workspace
-    session_id = get_thread_id()
+    session_id = str(get_thread_id())
+    write_dataset_bytes = _get_modal_function("write_dataset_bytes")
     summary = write_dataset_bytes.remote(
         dataset_id=dataset_id,
         data_b64=base64.b64encode(data_bytes).decode("utf-8"),
@@ -93,7 +126,8 @@ async def load_dataset_tool(
 )
 def list_datasets_tool(runtime: ToolRuntime) -> Command:
     """Use this to list all datasets currently loaded in the sandbox."""
-    session_id = get_thread_id()
+    session_id = str(get_thread_id())
+    list_loaded_datasets = _get_modal_function("list_loaded_datasets")
     datasets = list_loaded_datasets.remote(session_id=session_id)
     return Command(update={"messages": [ToolMessage(content=json.dumps(datasets, ensure_ascii=False), tool_call_id=runtime.tool_call_id)]})
 
@@ -110,6 +144,7 @@ def export_dataset_tool(dataset_path: Annotated[str, "The path of the dataset to
             content="Missing S3_BUCKET env var",
             tool_call_id=runtime.tool_call_id
         )]})
-    session_id = get_thread_id()
+    session_id = str(get_thread_id())
+    export_dataset = _get_modal_function("export_dataset")
     result = export_dataset.remote(dataset_path, bucket, session_id=session_id)
     return Command(update={"messages": [ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=runtime.tool_call_id)]})
