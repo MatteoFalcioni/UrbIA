@@ -29,7 +29,7 @@ Your Laptop                AWS VPC
 
 ### EC2 Bastion Host
 - **Instance ID**: i-03509b694daca01ef (find in EC2 console)
-- **Public IP**: 3.122.52.220
+- **Public IP**: 3.77.151.181  <- ⚠️ may change at restart! see later
 - **Type**: t2.micro
 - **Cost**: ~$8.50/month (or stop when not using)
 - **Security Group**: bastion-ssh-access (SSH from your IP)
@@ -59,6 +59,8 @@ Your Laptop                AWS VPC
    aws ec2 stop-instances --instance-ids i-03509b694daca01ef
    aws ec2 start-instances --instance-ids i-03509b694daca01ef  # when needed
    ```
+   
+   ⚠️ **Note**: After restart, bastion's Public IP may change. Update IP in `~/start-rds-tunnel.sh` and `new_tests/conftest.py`. Find it in [console](https://eu-central-1.console.aws.amazon.com/ec2/home?region=eu-central-1#InstanceDetails:instanceId=i-03509b694daca01ef) under **Public IPv4 address**
 
 3. **Stop RDS in dev environments** (production should stay running)
 
@@ -140,7 +142,7 @@ psql "$DATABASE_URL"
 
 ### Bastion Host Details
 
-- **Public IP**: `3.122.52.220`
+- **Public IP**: `3.77.151.181`
 - **Instance Type**: t2.micro
 - **VPC**: `vpc-051e64accf516ba40`
 - **Security Group**: `bastion-ssh-access`
@@ -236,7 +238,7 @@ chmod 400 ~/.ssh/rds-bastion-key.pem
 
 - Verify bastion can reach RDS:
   ```bash
-  ssh -i ~/.ssh/rds-bastion-key.pem ec2-user@3.122.52.220
+  ssh -i ~/.ssh/rds-bastion-key.pem ec2-user@3.77.151.181 # ⚠️ url may change at restart!
   timeout 5 bash -c 'cat < /dev/null > /dev/tcp/lg-urban-prod1.cji2iikug9u5.eu-central-1.rds.amazonaws.com/5432'
   exit
   ```
