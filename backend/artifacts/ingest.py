@@ -11,17 +11,6 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Tokens removed; downloads use S3 presigned URLs via API
-
-
-# ---------- small helpers ----------
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-# No local-file ingest in S3-only workflow
-
-
 # ---------------- S3 metadata ingestion (no file bytes on backend) ----------------
 async def ingest_artifact_metadata(
     session: AsyncSession,
@@ -70,5 +59,3 @@ async def ingest_artifact_metadata(
     # URL is provided by API via S3 presigned redirect
 
     return desc
-
-# Legacy upsert logic removed (no local file copies)

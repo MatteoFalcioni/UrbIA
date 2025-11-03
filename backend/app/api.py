@@ -554,7 +554,7 @@ async def list_messages(
     Includes artifacts associated with each message via tool_call_id.
     """
     from backend.db.models import Artifact
-    from backend.artifacts.tokens import create_download_url
+    from backend.artifacts.storage import generate_artifact_download_url
     
     stmt = (
         select(Message)
@@ -639,10 +639,10 @@ async def list_messages(
                     artifact_res = await session.execute(artifact_stmt)
                     artifacts = artifact_res.scalars().all()
                     
-                    # Build artifact outputs with download URLs
+                    # Build artifact outputs with download URLs (S3 presigned)
                     for artifact in artifacts:
                         try:
-                            url = create_download_url(str(artifact.id))
+                            url = generate_artifact_download_url(artifact, expiry_seconds=86400)
                             msg_dict["artifacts"].append({
                                 "id": artifact.id,
                                 "name": artifact.filename,

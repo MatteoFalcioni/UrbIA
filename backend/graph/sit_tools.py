@@ -1,5 +1,8 @@
 import folium
 import tempfile
+import hashlib
+import os
+import boto3
 from typing import Optional, List
 from typing_extensions import Annotated
 from langgraph.types import Command
@@ -8,9 +11,6 @@ from langchain_core.messages import ToolMessage
 from pathlib import Path
 from folium.plugins import DualMap
 from folium import Element
-
-# Import the session manager
-from backend.graph.dataset_tools import session_manager, get_session_key
 
 
 # --------------------------
@@ -106,27 +106,43 @@ async def folium_ortho(
             save_path=temp_path
         )
         
-        # Get session and container
-        session_id = get_session_key()
-        session_manager.start(session_id)
-        
-        # Ingest the file directly into the artifact system
-        from backend.artifacts.ingest import ingest_files
+        # Get context
         from backend.graph.context import get_db_session, get_thread_id
-        
         db_session = get_db_session()
         thread_id = get_thread_id()
         
-        descriptors = await ingest_files(
-            session=db_session,
-            thread_id=thread_id,
-            new_host_files=[temp_path],
-            session_id=session_id,
-            run_id=f"ortofoto_{year}",
-            tool_call_id=runtime.tool_call_id
+        # Upload to S3
+        html_bytes = temp_path.read_bytes()
+        sha256 = hashlib.sha256(html_bytes).hexdigest()
+        s3_key = f"output/artifacts/{sha256[:2]}/{sha256[2:4]}/{sha256}"
+        
+        s3 = boto3.client('s3')
+        bucket = os.getenv('S3_BUCKET', 'lg-urban-prod')
+        s3.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=html_bytes,
+            ContentType='text/html'
         )
         
-        # ingest_files automatically deletes the temp file, so no cleanup needed
+        # Insert metadata into database
+        from backend.artifacts.ingest import ingest_artifact_metadata
+        desc = await ingest_artifact_metadata(
+            session=db_session,
+            thread_id=thread_id,
+            s3_key=s3_key,
+            sha256=sha256,
+            filename=f"ortofoto_{year}.html",
+            mime="text/html",
+            size=len(html_bytes),
+            session_id=str(thread_id),
+            tool_call_id=runtime.tool_call_id,
+        )
+        
+        # Clean up temp file
+        temp_path.unlink()
+        
+        descriptors = [desc]
         
         if descriptors:
             artifact = descriptors[0]
@@ -175,9 +191,6 @@ async def folium_ortho(
 # -------------------------------
 # compare_ortofoto tool (DualMap)
 # -------------------------------
-
-# Import your session helpers
-from backend.graph.dataset_tools import session_manager, get_session_key
 
 _AVAILABLE_YEARS = {2017, 2018, 2020, 2021, 2022, 2023, 2024}
 
@@ -319,29 +332,43 @@ async def compare_ortofoto(
             temp_path = Path(tmp.name)
         m.save(temp_path)
 
-        # Read inline HTML for Chainlit CustomElement
-        html_content = temp_path.read_text(encoding="utf-8")
-
-        # Start / acquire session
-        session_id = get_session_key()
-        session_manager.start(session_id)
-
-        # Ingest artifact
-        from backend.artifacts.ingest import ingest_files
+        # Get context
         from backend.graph.context import get_db_session, get_thread_id
-        
         db_session = get_db_session()
         thread_id = get_thread_id()
         
-        descriptors = await ingest_files(
+        # Upload to S3
+        html_bytes = temp_path.read_bytes()
+        sha256 = hashlib.sha256(html_bytes).hexdigest()
+        s3_key = f"output/artifacts/{sha256[:2]}/{sha256[2:4]}/{sha256}"
+        
+        s3 = boto3.client('s3')
+        bucket = os.getenv('S3_BUCKET', 'lg-urban-prod')
+        s3.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=html_bytes,
+            ContentType='text/html'
+        )
+        
+        # Insert metadata into database
+        from backend.artifacts.ingest import ingest_artifact_metadata
+        desc = await ingest_artifact_metadata(
             session=db_session,
             thread_id=thread_id,
-            new_host_files=[temp_path],
-            session_id=session_id,
-            run_id=f"compare_ortofoto_dual_{left_year}_vs_{right_year}",
+            s3_key=s3_key,
+            sha256=sha256,
+            filename=f"ortofoto_dual_{left_year}_vs_{right_year}.html",
+            mime="text/html",
+            size=len(html_bytes),
+            session_id=str(thread_id),
             tool_call_id=runtime.tool_call_id,
         )
-        # ingest_files auto-deletes temp file
+        
+        # Clean up temp file
+        temp_path.unlink()
+        
+        descriptors = [desc]
 
         artifact_struct = None
         if descriptors: # means it was ingested correctly
@@ -467,26 +494,43 @@ async def view_3d_model(
             tmp.write(html_content)
             temp_path = Path(tmp.name)
         
-        # Get session and container
-        session_id = get_session_key()
-        session_manager.start(session_id)
-        
-        # Ingest the file into the artifact system
-        from backend.artifacts.ingest import ingest_files
+        # Get context
         from backend.graph.context import get_db_session, get_thread_id
-        
         db_session = get_db_session()
         thread_id = get_thread_id()
         
-        descriptors = await ingest_files(
+        # Upload to S3
+        html_bytes = temp_path.read_bytes()
+        sha256 = hashlib.sha256(html_bytes).hexdigest()
+        s3_key = f"output/artifacts/{sha256[:2]}/{sha256[2:4]}/{sha256}"
+        
+        s3 = boto3.client('s3')
+        bucket = os.getenv('S3_BUCKET', 'lg-urban-prod')
+        s3.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=html_bytes,
+            ContentType='text/html'
+        )
+        
+        # Insert metadata into database
+        from backend.artifacts.ingest import ingest_artifact_metadata
+        desc = await ingest_artifact_metadata(
             session=db_session,
             thread_id=thread_id,
-            new_host_files=[temp_path],
-            session_id=session_id,
-            run_id="bologna_3d_model",
-            tool_call_id=runtime.tool_call_id
+            s3_key=s3_key,
+            sha256=sha256,
+            filename="bologna_3d_model.html",
+            mime="text/html",
+            size=len(html_bytes),
+            session_id=str(thread_id),
+            tool_call_id=runtime.tool_call_id,
         )
-        # ingest_files automatically deletes the temp file
+        
+        # Clean up temp file
+        temp_path.unlink()
+        
+        descriptors = [desc]
         
         if descriptors:
             artifact = descriptors[0]

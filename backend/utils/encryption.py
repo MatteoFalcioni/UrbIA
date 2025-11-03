@@ -40,6 +40,8 @@ def get_encryption_key() -> bytes:
         except Exception:
             raise ValueError("Invalid ENCRYPTION_KEY format")
     
+
+    # remove this in production for security reasons
     # 2. Check for persistent key file
     key_file = Path("/app/.encryption_key_data/key")
     if key_file.exists():

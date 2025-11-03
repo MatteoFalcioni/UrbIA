@@ -71,5 +71,7 @@ temp/
 # heavy data 
 heavy_llm_data/
 
-# AWS
+# AWS, RDS
 *.pem
+start-rds-tunnel-COPY.sh
+

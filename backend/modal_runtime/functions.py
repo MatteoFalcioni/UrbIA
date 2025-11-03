@@ -9,6 +9,7 @@ import modal
 import pandas as pd
 
 # Import the Modal app from app.py
+# note: since we import like this, we need to deploy with: modal deploy -m backend.modal_runtime.functions
 from .app import app, image
 from .session import volume_name
 WORKSPACE_VOLUME = modal.Volume.from_name(volume_name(), create_if_missing=True)
@@ -152,9 +153,27 @@ def write_dataset_bytes(
         summary.update({
             "shape": [int(df.shape[0]), int(df.shape[1])],
             "columns": list(map(str, df.columns)),
-            "dtypes": {str(c): str(t) for c, t in df.dtypes.items()},
-            "head": df.head(5).to_dict(orient="records"),
+            "dtypes": {str(c): str(t) for c, t in df.dtypes.items()}
         })
+        
+        # Only include head preview for reasonably-sized datasets
+        # Limit to first 10 columns and truncate long values to avoid memory bloat
+        if df.shape[1] <= 50:  # Only preview if <= 50 columns
+            head_df = df.head(3).iloc[:, :10]  # Max 3 rows, 10 columns
+            head_data = head_df.to_dict(orient="records")
+            
+            # Truncate long string values
+            for row in head_data:
+                for key, val in row.items():
+                    if isinstance(val, str) and len(val) > 100:
+                        row[key] = val[:100] + "..."
+            
+            summary["head"] = head_data
+            if df.shape[1] > 10:
+                summary["head_note"] = f"Showing first 10 of {df.shape[1]} columns"
+        else:
+            summary["head_note"] = f"Preview skipped: dataset too wide ({df.shape[1]} columns)"
+            
     except Exception as e:
         summary["preview_error"] = f"{e}"
 

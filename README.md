@@ -35,14 +35,7 @@ Built on LangGraph, this production-ready application combines conversational AI
 - **Folium Integration**: Dynamic map generation with overlays
 - **GeoParquet Support**: Native handling of geographic datasets
 
-### 📁 Smart Dataset Management
-- **Flexible Access Modes**:
-  - `API` - On-demand fetching from Bologna OpenData
-  - `LOCAL_RO` - Read-only mount of local datasets
-  - `HYBRID` - Combined API + heavy local datasets
-  - `NONE` - Basic sandbox mode
-- **Caching**: Datasets persist in sandbox session for reuse
-- **Export**: Move datasets to downloadable artifacts
+### 📁 S3-based Dataset Management
 
 ### 🎨 Modern UI
 - React + TypeScript frontend with dark mode
@@ -53,6 +46,25 @@ Built on LangGraph, this production-ready application combines conversational AI
 ---
 
 ## 🚀 Quick Start
+
+1. Start RDS tunnel
+```bash
+~/start-rds-tunnel.sh
+```
+### 2. Set env vars (create .env in project root)
+
+### 3. Run backend
+```bash
+cd ~/LG-Urban
+uvicorn backend.main:app --reload --port 8000
+```
+### 4. Run frontend (separate terminal)
+```bash
+cd frontend
+npm run dev
+```
+
+Below the older startup method with compose (we trashing that)
 
 ### Prerequisites
 - Docker & Docker Compose

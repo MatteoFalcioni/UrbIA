@@ -46,7 +46,6 @@ def ensure_rds_tunnel():
         # Not using tunnel, skip
         yield
         return
-    
     # Check if tunnel already running
     if is_port_open("localhost", 5432, timeout=2.0):
         print("\n✅ RDS tunnel already running (localhost:5432 is accessible)")
@@ -66,7 +65,7 @@ def ensure_rds_tunnel():
     try:
         # SSH tunnel as background process
         ssh_key = Path.home() / ".ssh" / "rds-bastion1.pem"
-        bastion_ip = "3.122.52.220"
+        bastion_ip = "3.77.151.181"
         rds_endpoint = "lg-urban-prod1.cji2iikug9u5.eu-central-1.rds.amazonaws.com"
         
         tunnel_process = subprocess.Popen(
