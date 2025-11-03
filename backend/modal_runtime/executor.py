@@ -26,7 +26,8 @@ class SandboxExecutor:
             timeout=60*60*2,  # 2 hours session timeout
             idle_timeout=60*10,  # 10 min idle timeout
             volumes={"/workspace": self.volume},  # link it to above volume
-            workdir=base_dir  # NEW: per session cwd
+            workdir=base_dir,  # NEW: per session cwd
+            secrets=[modal.Secret.from_name("aws-credentials-IAM")]  # AWS creds for S3 uploads
         )
 
         # ensure per-session dir exists before starting the driver
