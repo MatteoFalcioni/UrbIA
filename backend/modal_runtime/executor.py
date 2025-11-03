@@ -34,7 +34,8 @@ class SandboxExecutor:
         
         self.process = self.sandbox.exec(
             "python", "/root/driver.py",
-            bufsize=1  # CRITICAL: bufsize=1 for line buffering!
+            bufsize=1,  # CRITICAL: bufsize=1 for line buffering!
+            workdir=base_dir  # Set working directory for driver process
         )
     
     def execute(self, code: str, timeout: int = 120) -> Dict[str, Any]:
