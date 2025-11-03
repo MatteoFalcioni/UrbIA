@@ -18,19 +18,21 @@ def get_encryption_key() -> bytes:
     """
     Get or generate the encryption key for API keys.
     
-    Priority order:
-    1. ENCRYPTION_KEY environment variable (for production/secrets management)
-    2. .encryption_key file in the app directory (auto-generated on first run)
-    3. Generate new key and save to file (first-time setup)
+    Production: ENCRYPTION_KEY environment variable is REQUIRED
+    Development: Falls back to .encryption_key file for convenience
     
     The key is cached to ensure consistency during the application lifecycle.
+    
+    Raises:
+        RuntimeError: If ENCRYPTION_KEY is not set in production environment
+        ValueError: If ENCRYPTION_KEY format is invalid
     """
     global _encryption_key_cache
     
     if _encryption_key_cache is not None:
         return _encryption_key_cache
     
-    # 1. Check environment variable first
+    # Check environment variable (REQUIRED in production)
     key_str = os.getenv('ENCRYPTION_KEY')
     if key_str:
         try:
@@ -40,29 +42,34 @@ def get_encryption_key() -> bytes:
         except Exception:
             raise ValueError("Invalid ENCRYPTION_KEY format")
     
-
-    # remove this in production for security reasons
-    # 2. Check for persistent key file
-    key_file = Path("/app/.encryption_key_data/key")
+    # Only allow file fallback in development
+    is_production = os.getenv('ENVIRONMENT', 'development').lower() == 'production'
+    if is_production:
+        raise RuntimeError(
+            "ENCRYPTION_KEY environment variable is required in production. "
+            "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+        )
+    
+    # Development fallback: use local file
+    key_file = Path(".encryption_key")
     if key_file.exists():
         try:
             with open(key_file, 'rb') as f:
                 _encryption_key_cache = f.read().strip()
-            print(f"✅ Loaded encryption key from {key_file}")
+            print(f"✅ Loaded encryption key from {key_file} (DEV ONLY)")
             return _encryption_key_cache
         except Exception as e:
             print(f"⚠️  Failed to load key from {key_file}: {e}")
     
-    # 3. Generate new key and persist it
+    # Generate for local development
     key = Fernet.generate_key()
     try:
         key_file.parent.mkdir(parents=True, exist_ok=True)
         with open(key_file, 'wb') as f:
             f.write(key)
-        # Set restrictive permissions (owner read/write only)
         key_file.chmod(0o600)
-        print(f"🔑 Generated new encryption key and saved to {key_file}")
-        print(f"⚠️  IMPORTANT: Back up this key! If lost, encrypted API keys cannot be recovered.")
+        print(f"🔑 Generated new encryption key for development: {key_file}")
+        print(f"⚠️  IMPORTANT: This key is for development only. Use ENCRYPTION_KEY env var in production.")
     except Exception as e:
         print(f"⚠️  Could not save key to file: {e}. Key will only persist for this session.")
     
