@@ -23,6 +23,9 @@ cryptography
 boto3
 s3fs
 
+# Modal
+modal
+
 # ===== Data / analytics =====
 googlemaps
 geopandas
