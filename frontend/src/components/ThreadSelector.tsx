@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronDown, Plus, Sun, Moon, MessageCircle, Pencil, Archive, ArchiveRestore, Trash2, CheckSquare, Square, Menu } from 'lucide-react';
+import { SignInButton, UserButton, useUser } from '@clerk/clerk-react';
 import { useChatStore } from '@/store/chatStore';
 import { createThread, updateThreadTitle, archiveThread, unarchiveThread, deleteThread, listThreads } from '@/utils/api';
 import { AnimatedTitle } from './AnimatedTitle';
@@ -14,6 +15,7 @@ interface ThreadSelectorProps {
 }
 
 export function ThreadSelector({ onCollapse }: ThreadSelectorProps) {
+  const { isSignedIn } = useUser();
   const userId = useChatStore((state) => state.userId);
   const threads = useChatStore((state) => state.threads);
   const addThread = useChatStore((state) => state.addThread);
@@ -241,6 +243,26 @@ export function ThreadSelector({ onCollapse }: ThreadSelectorProps) {
               <Sun size={16} className="text-gray-500 dark:text-slate-400" />
             )}
           </button>
+
+          {/* Authentication */}
+          {isSignedIn ? (
+            <UserButton 
+              appearance={{
+                elements: {
+                  avatarBox: "w-8 h-8"
+                }
+              }}
+            />
+          ) : (
+            <SignInButton mode="modal">
+              <button
+                className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-all duration-200 shadow-sm hover:shadow-md text-sm font-medium text-gray-700 dark:text-slate-200"
+                title="Sign in"
+              >
+                Sign in
+              </button>
+            </SignInButton>
+          )}
         </div>
       </div>
 

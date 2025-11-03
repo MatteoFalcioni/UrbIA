@@ -10,8 +10,11 @@ import { ChatSidebar } from '@/components/ChatSidebar';
 import { ArtifactDisplay } from '@/components/ArtifactDisplay';
 import { ConfigPanel } from '@/components/ConfigPanel';
 import { ToastManager } from '@/components/Toast';
+import { useClerkSync } from '@/hooks/useClerkSync';
 
 function App() {
+  // Sync Clerk authentication with chat store
+  useClerkSync();
   const theme = useChatStore((state) => state.theme);
   const currentThreadId = useChatStore((state) => state.currentThreadId);
   const toggleConfigPanel = useChatStore((state) => state.toggleConfigPanel);
