@@ -18,9 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY alembic.ini .
 
-# Expose backend API port (Railway will override with $PORT)
+# Expose backend API port
 EXPOSE 8000
 
-# Run database migrations and start server
-# Use $PORT environment variable for Railway compatibility
-CMD sh -c "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Start server
+CMD sh -c "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
