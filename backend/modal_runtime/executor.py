@@ -41,9 +41,19 @@ class SandboxExecutor:
     
     def execute(self, code: str, timeout: int = 120) -> Dict[str, Any]:
         """Execute code and return results.
-        
-        The driver handles all artifact scanning and S3 upload,
-        so we just need to send the code and return the response.
+
+        Args:
+            code (str): The code to execute.
+            timeout (int): The timeout for the execution.
+
+        Returns:
+            Dict[str, Any]: The result of the execution.
+                - stdout (str): The standard output of the execution.
+                - stderr (str): The standard error of the execution.
+                - artifacts (list): The artifacts of the execution.
+                - error (str): The error message if the execution fails.
+
+        NOTE: The driver handles all artifact scanning and S3 upload, so we just need to send the code and return the response.
         """
         try:
             # Send command to driver

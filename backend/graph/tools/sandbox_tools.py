@@ -71,11 +71,16 @@ def execute_code_tool(code: Annotated[str, "The python code to execute."],
 
     # take out artifacts from result and use artifact field of ToolMessage to return them
     artifacts = result.pop("artifacts")
-    return Command(update={"messages": [ToolMessage(
-        content=json.dumps(result, ensure_ascii=False), 
-        tool_call_id=runtime.tool_call_id,
-        artifact=artifacts
-    )]})
+    return Command(
+        update={
+            "messages": [ToolMessage(
+                content=json.dumps(result, ensure_ascii=False), 
+                tool_call_id=runtime.tool_call_id, 
+                artifact=artifacts
+            )],
+            "code_logs": [{"input": code, "stdout": result.get("stdout", ""), "stderr": result.get("stderr", "")}]
+        }
+    )
 
 # -----------------
 # load dataset tool
