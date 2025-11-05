@@ -17,3 +17,4 @@ COPY backend/db ./backend/db
 # The command will be run from docker-compose
 # alembic upgrade head
 
+
