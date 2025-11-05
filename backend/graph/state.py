@@ -55,6 +55,15 @@ def list_add(
     
     return left + right
 
+
+def list_replace_str(
+    left: list[str] | None,
+    right: list[str] | None
+) -> list[str]:
+    """Replace list of strings entirely instead of concatenating. Used for code logs chunks"""
+    return right if right is not None else (left if left is not None else [])
+
+
 def str_replace(
     left: str | None,
     right: str | None
@@ -86,4 +95,5 @@ class MyState(AgentState):
     write_report : Annotated[bool, bool_replace]
     last_report_title : Annotated[str, str_replace]
     edit_instructions : Annotated[str, str_replace]
-    code_logs: Annotated[list[dict[str, str]], list_add]  # list of dicts (we need chronologcal order!), each dicts is input and output of a code block (out can be stdout or stderr or both)
+    code_logs: Annotated[list[dict[str, str]], list_add]  # list of dicts (we need chronological order!), each dicts is input and output of a code block (out can be stdout or stderr or both)
+    code_logs_chunks: Annotated[list[str], list_replace_str]  # list of strings, each string is a chunk of already ordered code logs - we first stringify code_logs correclty, then separate it in chunks (see get_code_logs_tool in report_tools.py)
