@@ -15,7 +15,7 @@ def assign_to_report_writer_tool(
     Assigns the task to the report writer when analysis is complete. 
     Since literal tool assingment was not working, we use this to update the state flag and conditional edge to route to the report writer.
     """
-    
+    print("***assigning to report writer in assign_to_report_writer_tool")
     return Command(
         update={
             "messages": [ToolMessage(
@@ -39,17 +39,21 @@ def write_report_tool(
     Write a report of the analysis performed.
     Interrupts the model to ask for approval before writing the report.
     """
-    state = runtime.state
-
+    state = runtime.state   
+    print("***writing report in write_report_tool")
     # interrupt only if the writer is not editing an existing report
     if state["edit_instructions"] == "":
+
+        print("***asking for report writing approval in write_report_tool")
 
         # refine this message in frontend and simplify it here in backend (the user will not see this below)
         response = interrupt(f"The model has finished its analysis and wants to write a report. To continue, input 'yes'. To reject, input 'no'.")
 
         if response["type"] == "accept":
+            print("***accepted write report in write_report_tool")
             pass  # accepted write report: therefore, continue flow
         elif response["type"] == "reject":
+            print("***rejected write report in write_report_tool")
             return Command(goto="__end__")  # rejected write report: therefore, end flow
         else:
             raise ValueError(f"Invalid response type: {response['type']}")

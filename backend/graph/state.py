@@ -70,9 +70,10 @@ def str_replace(
 ) -> str:
     """Update a string just by replacing it. Reducer needed to initialize when None"""
     if left is None:
-        return ""
-    else:
-        return right
+        left = ""
+    if right is None:
+        right = ""
+    return right
 
 def bool_replace(
     left: bool | None,
@@ -80,9 +81,11 @@ def bool_replace(
 ) -> bool:
     """Update a boolean just by replacing it. Reducer needed to initialize when None"""
     if left is None:
-        return False
-    else:
-        return right
+        left = False
+    if right is None:
+        right = False
+    
+    return right
 
 
 class MyState(AgentState):

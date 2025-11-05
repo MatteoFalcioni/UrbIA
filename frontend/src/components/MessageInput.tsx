@@ -7,6 +7,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 import { ContextIndicator } from './ContextIndicator';
+import { InterruptModal } from './InterruptModal';
 import { useSSE } from '@/hooks/useSSE';
 import { createThread, updateThreadConfig, listMessages, getThreadState } from '@/utils/api';
 import type { Message } from '@/types/api';
@@ -28,6 +29,7 @@ export function MessageInput() {
   const setIsSummarizing = useChatStore((state) => state.setIsSummarizing);
   
   const [input, setInput] = useState('');
+  const [interruptData, setInterruptData] = useState<any>(null); // Track graph interrupts (HITL)
   const streamingRef = useRef(''); // Accumulate streaming tokens (mirror to avoid stale closure on onDone)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const addToolDraft = useChatStore((state) => state.addToolDraft);
@@ -71,7 +73,7 @@ export function MessageInput() {
   }, [input, adjustTextareaHeight]);
   
   // SSE hook with handlers for streaming events
-  const { sendMessage, isStreaming } = useSSE({
+  const { sendMessage, resumeThread, isStreaming } = useSSE({
     onThinking: (content) => {
       // Set thinking block (Claude extended thinking)
       if (currentThreadId) {
@@ -122,6 +124,11 @@ export function MessageInput() {
     onSummarizing: (status) => {
       // Show/hide summarization animation
       setIsSummarizing(status === 'start');
+    },
+    onInterrupt: (value) => {
+      // Graph interrupted - show HITL modal
+      console.log('Graph interrupted:', value);
+      setInterruptData(value);
     },
     onDone: async (messageId) => {
       console.log('onDone called with messageId:', messageId);
@@ -302,6 +309,18 @@ export function MessageInput() {
       {/* Inline typing now handled in MessageList; no bottom preview */}
 
       {/* Active tool indicators are now rendered inline in the chat list */}
+      
+      {/* Interrupt Modal - Show when graph is interrupted for HITL */}
+      {interruptData && currentThreadId && (
+        <InterruptModal
+          interruptData={interruptData}
+          onResume={(resumeValue) => {
+            resumeThread(currentThreadId, resumeValue);
+            setInterruptData(null);
+          }}
+          onCancel={() => setInterruptData(null)}
+        />
+      )}
     </form>
   );
 }

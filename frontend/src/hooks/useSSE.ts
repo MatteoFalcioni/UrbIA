@@ -18,6 +18,7 @@ interface UseSSEOptions {
   onTitleUpdated?: (title: string) => void;
   onContextUpdate?: (tokensUsed: number, maxTokens: number) => void;
   onSummarizing?: (status: 'start' | 'done') => void;
+  onInterrupt?: (value: any) => void;  // Called when graph is interrupted (HITL)
   onDone?: (messageId: string | null) => void;
   onError?: (error: string) => void;
 }
@@ -101,6 +102,9 @@ export function useSSE(options: UseSSEOptions) {
                   options.onContextUpdate?.(event.tokens_used, event.max_tokens);
                 } else if (event.type === 'summarizing') {
                   options.onSummarizing?.(event.status);
+                } else if (event.type === 'interrupt') {
+                  options.onInterrupt?.(event.value);
+                  setIsStreaming(false);  // Stream ends after interrupt
                 } else if (event.type === 'done') {
                   options.onDone?.(event.message_id);
                   setIsStreaming(false);
@@ -132,6 +136,107 @@ export function useSSE(options: UseSSEOptions) {
     [options]
   );
 
-  return { sendMessage, isStreaming };
+  /**
+   * Resume a thread after an interrupt.
+   * 
+   * @param threadId - Target thread ID
+   * @param resumeValue - Resume data (e.g., {type: 'accept'}, {type: 'edit', edit_instructions: '...'})
+   */
+  const resumeThread = useCallback(
+    async (threadId: string, resumeValue: Record<string, any>) => {
+      // Abort any existing stream
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      setIsStreaming(true);
+
+      try {
+        // POST resume request
+        const res = await fetch(`${BASE_URL}/threads/${threadId}/resume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resume_value: resumeValue }),
+          signal: abortController.signal,
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Failed to resume: ${res.status} ${errorText}`);
+        }
+
+        // Read SSE stream (same as sendMessage)
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+          throw new Error('No response body');
+        }
+
+        // Process SSE stream
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              try {
+                const event: SSEEvent = JSON.parse(data);
+
+                // Dispatch to handlers (same as sendMessage)
+                if (event.type === 'token') {
+                  options.onToken?.(event.content);
+                } else if (event.type === 'thinking') {
+                  options.onThinking?.(event.content);
+                } else if (event.type === 'tool_start') {
+                  options.onToolStart?.(event.name, event.input);
+                } else if (event.type === 'tool_end') {
+                  options.onToolEnd?.(event.name, event.output, event.artifacts);
+                } else if (event.type === 'title_updated') {
+                  options.onTitleUpdated?.(event.title);
+                } else if (event.type === 'context_update') {
+                  options.onContextUpdate?.(event.tokens_used, event.max_tokens);
+                } else if (event.type === 'summarizing') {
+                  options.onSummarizing?.(event.status);
+                } else if (event.type === 'interrupt') {
+                  options.onInterrupt?.(event.value);
+                  setIsStreaming(false);
+                } else if (event.type === 'done') {
+                  options.onDone?.(event.message_id);
+                  setIsStreaming(false);
+                } else if (event.type === 'error') {
+                  options.onError?.(event.error);
+                  setIsStreaming(false);
+                }
+              } catch (parseErr) {
+                console.warn('Failed to parse SSE event:', data, parseErr);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.log('Resume stream aborted');
+        } else {
+          options.onError?.(err instanceof Error ? err.message : 'Resume failed');
+        }
+        setIsStreaming(false);
+      } finally {
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+      }
+    },
+    [options]
+  );
+
+  return { sendMessage, resumeThread, isStreaming };
 }
 

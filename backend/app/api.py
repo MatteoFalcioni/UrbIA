@@ -848,6 +848,21 @@ async def post_message_stream(
                     checkpoint_ns = event_meta.get("langgraph_checkpoint_ns", "")
                     langgraph_step = event_meta.get("langgraph_step")
                     
+                    # Check for graph interrupts (for human-in-the-loop)
+                    data = event.get("data", {})
+                    chunk = data.get("chunk")
+                    
+                    # Interrupt comes as a dict chunk with '__interrupt__' key
+                    if chunk and isinstance(chunk, dict) and '__interrupt__' in chunk:
+                        logging.info(f"🛑 INTERRUPT DETECTED - chunk keys: {chunk.keys()}")
+                        # Graph has been interrupted - send interrupt event to frontend
+                        interrupt_tuple = chunk["__interrupt__"]  # It's a tuple: (Interrupt(...),)
+                        interrupt_obj = interrupt_tuple[0]  # Get the Interrupt object from tuple
+                        interrupt_value = interrupt_obj.value  # Get the actual value dict
+                        logging.info(f"Interrupt value: {interrupt_value}")
+                        yield f"data: {json.dumps({'type': 'interrupt', 'value': to_jsonable(interrupt_value)})}\n\n"
+                        # Stream will end naturally after interrupt, no break needed
+                    
                     # Detect step change - decide if previous step was thinking or final response
                     if langgraph_step != current_langgraph_step and current_langgraph_step is not None:
                         if current_step_content:
@@ -986,6 +1001,7 @@ async def post_message_stream(
                                                 filename=art.get('name', 'unknown'),
                                                 mime=art.get('mime', 'application/octet-stream'),
                                                 size=art.get('size', 0),
+                                                session_id=str(t.id),  # Modal sandbox session ID
                                                 tool_call_id=tool_call_id
                                             )
                                         except Exception as e:
@@ -1094,6 +1110,229 @@ async def post_message_stream(
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# Resume endpoint for handling interrupts (human-in-the-loop)
+class ResumeRequest(BaseModel):
+    resume_value: dict  # The resume data from user (type: accept/reject/edit, etc.)
+
+
+@router.post("/threads/{thread_id}/resume")
+async def resume_thread(
+    thread_id: str,
+    payload: ResumeRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Resume a thread after an interrupt.
+    
+    Uses the same graph instance (via singleton checkpointer) and config to resume execution.
+    
+    Resume value format depends on the interrupt:
+    - For write_report approval: {"type": "accept"} or {"type": "reject"}
+    - For human approval: {"type": "accept"} or {"type": "edit", "edit_instructions": "..."}
+    """
+    from backend.graph.graph import make_graph
+    from backend.main import get_thread_lock, _checkpointer_cm
+    from backend.graph.context import set_db_session, set_thread_id
+    from langgraph.types import Command
+    import uuid as uuid_module
+    
+    # Verify checkpointer is initialized
+    if not _checkpointer_cm:
+        raise HTTPException(status_code=500, detail="Checkpointer not initialized")
+    
+    # Get thread to verify it exists
+    result = await session.execute(select(Thread).where(Thread.id == UUID(thread_id)))
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    # Get thread config
+    cfg_result = await session.execute(select(Config).where(Config.thread_id == UUID(thread_id)))
+    cfg = cfg_result.scalar_one_or_none()
+    
+    # Get user API keys
+    user_api_keys = await get_user_api_keys_for_llm(t.user_id, session)
+    
+    # Create graph with SAME config as original (checkpointer will restore state)
+    graph = make_graph(
+        model_name=cfg.model if cfg else None,
+        temperature=cfg.temperature if cfg else None,
+        system_prompt=cfg.system_prompt if cfg else None,
+        context_window=cfg.context_window if cfg else None,
+        checkpointer=_checkpointer_cm[0],  # Reuse global singleton checkpointer
+        user_api_keys=user_api_keys,
+    )
+    
+    # SAME config with SAME thread_id - checkpointer will restore state
+    config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": 40}
+    
+    # Stream response using SSE
+    async def stream_resume():
+        try:
+            lock = get_thread_lock(str(thread_id))
+            async with lock:
+                # Set context variables for tools
+                set_db_session(session)
+                set_thread_id(uuid_module.UUID(str(thread_id)))
+                
+                # Variables to track thinking vs final response (same as POST /messages)
+                current_step_content = ""
+                current_step_has_tools = False
+                current_langgraph_step = None
+                all_streamed_content = ""
+                
+                # Resume with Command(resume=resume_value) using SAME graph and config
+                async for event in graph.astream_events(Command(resume=payload.resume_value), config, version="v2"):
+                    event_type = event.get("event")
+                    event_name = event.get("name", "")
+                    event_meta = event.get("metadata", {})
+                    node = event_meta.get("langgraph_node")
+                    checkpoint_ns = event_meta.get("langgraph_checkpoint_ns", "")
+                    langgraph_step = event_meta.get("langgraph_step")
+                    
+                    # Check for another interrupt (same logic as POST /messages)
+                    data = event.get("data", {})
+                    chunk = data.get("chunk")
+                    
+                    if chunk and isinstance(chunk, dict) and '__interrupt__' in chunk:
+                        logging.info(f"🛑 INTERRUPT DETECTED (resume) - chunk keys: {chunk.keys()}")
+                        interrupt_tuple = chunk["__interrupt__"]  # It's a tuple: (Interrupt(...),)
+                        interrupt_obj = interrupt_tuple[0]  # Get the Interrupt object from tuple
+                        interrupt_value = interrupt_obj.value  # Get the actual value dict
+                        logging.info(f"Interrupt value (resume): {interrupt_value}")
+                        yield f"data: {json.dumps({'type': 'interrupt', 'value': to_jsonable(interrupt_value)})}\n\n"
+                        # Stream will end naturally after interrupt
+                    
+                    # Detect step change - same logic as POST /messages
+                    if langgraph_step != current_langgraph_step and current_langgraph_step is not None:
+                        if current_step_content:
+                            if current_step_has_tools:
+                                yield f"data: {json.dumps({'type': 'thinking', 'content': current_step_content})}\n\n"
+                            else:
+                                all_streamed_content += current_step_content
+                                yield f"data: {json.dumps({'type': 'token', 'content': current_step_content})}\n\n"
+                        current_step_content = ""
+                        current_step_has_tools = False
+                    
+                    current_langgraph_step = langgraph_step
+                    
+                    # Stream token chunks (same as POST /messages)
+                    if event_type == "on_chat_model_stream":
+                        if checkpoint_ns.startswith("summarize_conversation:"):
+                            continue
+                        
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk:
+                            if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                                current_step_has_tools = True
+                            
+                            if hasattr(chunk, "content") and chunk.content:
+                                chunk_text = extract_text_from_content(chunk.content)
+                                if chunk_text:
+                                    current_step_content += chunk_text
+                    
+                    # Tool events (same as POST /messages)
+                    elif event_type == "on_tool_start":
+                        tool_input = event.get("data", {}).get("input")
+                        yield f"data: {json.dumps({'type': 'tool_start', 'name': event_name, 'input': to_jsonable(tool_input)})}\n\n"
+                    
+                    elif event_type == "on_tool_end":
+                        raw_output = event.get("data", {}).get("output")
+                        artifacts = None
+                        tool_content = None
+                        
+                        if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                            messages = raw_output.update.get("messages", [])
+                            if messages and len(messages) > 0:
+                                tool_msg = messages[0]
+                                if hasattr(tool_msg, "artifact") and tool_msg.artifact:
+                                    artifacts = tool_msg.artifact
+                                if hasattr(tool_msg, "content"):
+                                    tool_content = tool_msg.content
+                        elif hasattr(raw_output, "artifact"):
+                            artifacts = raw_output.artifact
+                            if hasattr(raw_output, "content"):
+                                tool_content = raw_output.content
+                        
+                        tool_output_for_sse = {"content": tool_content} if isinstance(tool_content, str) else to_jsonable(tool_content) if tool_content else to_jsonable(raw_output)
+                        
+                        event_data = {
+                            'type': 'tool_end',
+                            'name': event_name,
+                            'output': tool_output_for_sse
+                        }
+                        if artifacts:
+                            # Handle artifacts same as POST /messages
+                            from backend.artifacts.storage import generate_presigned_url_from_s3_key
+                            from backend.artifacts.ingest import ingest_artifact_metadata
+                            from backend.db.session import ASYNC_SESSION_MAKER
+                            
+                            # Extract tool_call_id
+                            tool_call_id = None
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                messages = raw_output.update.get("messages", [])
+                                if messages and len(messages) > 0:
+                                    tool_msg = messages[0]
+                                    if hasattr(tool_msg, "tool_call_id"):
+                                        tool_call_id = tool_msg.tool_call_id
+                            
+                            # Save artifacts to DB
+                            async with ASYNC_SESSION_MAKER() as artifact_sess:
+                                for art in artifacts:
+                                    if 's3_key' in art and tool_call_id:
+                                        try:
+                                            await ingest_artifact_metadata(
+                                                session=artifact_sess,
+                                                thread_id=t.id,
+                                                s3_key=art['s3_key'],
+                                                sha256=art.get('sha256', ''),
+                                                filename=art.get('name', 'unknown'),
+                                                mime=art.get('mime', 'application/octet-stream'),
+                                                size=art.get('size', 0),
+                                                session_id=str(t.id),
+                                                tool_call_id=tool_call_id
+                                            )
+                                        except Exception as e:
+                                            logging.warning(f"Failed to ingest artifact {art.get('name')}: {e}")
+                                await artifact_sess.commit()
+                            
+                            # Convert for SSE
+                            converted_artifacts = []
+                            for art in artifacts:
+                                converted = {
+                                    'id': art.get('sha256', '')[:16],
+                                    'name': art.get('name', 'unknown'),
+                                    'mime': art.get('mime', 'application/octet-stream'),
+                                    'size': art.get('size', 0),
+                                }
+                                if 's3_key' in art:
+                                    try:
+                                        converted['url'] = generate_presigned_url_from_s3_key(art['s3_key'])
+                                    except Exception as e:
+                                        logging.warning(f"Failed to generate presigned URL: {e}")
+                                        continue
+                                converted_artifacts.append(converted)
+                            event_data['artifacts'] = converted_artifacts
+                        
+                        yield f"data: {json.dumps(event_data)}\n\n"
+                
+                # Handle last step's content
+                if current_step_content:
+                    if current_step_has_tools:
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': current_step_content})}\n\n"
+                    else:
+                        all_streamed_content += current_step_content
+                        yield f"data: {json.dumps({'type': 'token', 'content': current_step_content})}\n\n"
+                
+                yield f"data: {json.dumps({'type': 'done', 'message_id': None})}\n\n"
+                
+        except Exception as e:
+            logging.error(f"Resume failed for thread {thread_id}: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(stream_resume(), media_type="text/event-stream")
 
 
 # API Key Management Endpoints

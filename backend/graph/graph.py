@@ -243,7 +243,9 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         NOTE: this workaround was needed because nesting commands is bad behaviour - so we make a tool update a flag and then check it here.
         Basically an alternative to a conditional edge. 
         """
+        print(f"***routing function in get_next_node: write report flag is {state['write_report']}")
         if state["write_report"] == True:
+            print("***routing to report writer in get_next_node")
             return "report_writer"
     
         return "__end__"
@@ -293,13 +295,16 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         meta = last_msg.usage_metadata
         input_tokens = meta["input_tokens"] if meta else 0
 
+        # routing happens here
+        goto = get_next_node(result)  # CRUCIAL: we were invoking on state -> we need to invoke on the result! that contains the new flag value
+
         # update the token count and add message
         return Command(
                 update={
                     "messages": [last_msg],
                     "token_count": input_tokens  # Accumulates via reducer
                 },
-                goto=get_next_node(state)  # this can be either end flow or report writer depending on the state flag
+                goto=goto
             )
 
     # -------REPORT WRITER AGENT NODE-------
@@ -317,15 +322,20 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
             - (3) **propagates the write_report_tool updates** with Command(update={...}) and goes to the last human approval node. 
                 There, we show the report to the user and ask for approval or edits.
         """
+
+        print("***arrived to report writer")
         # If there are edit instructions, add them to the messages and invoke the agent with the new messages
         if state["edit_instructions"] != "": # edits: revise existing report
+            print("***revising existing report in write_report_node")
             msg = f"Revise the report based on the following instructions: {state['edit_instructions']}"
             messages = state["messages"] + [HumanMessage(content=msg)]
         else: # no edits: write a new report
+            print("***writing new report in write_report_node")
             msg = "Write a new report based on the analysis performed and the sources used."
             messages = state["messages"] + [HumanMessage(content=msg)]
 
         # invoke on full state but use messages with new sys msg
+        print("***invoking report writer agent in write_report_node")
         result = await agent_report_writer.ainvoke({**state, "messages": messages})  # here the agent uses the write_report_tool, which has its own interrupt for human approval
         last_msg = result["messages"][-1]
 
@@ -358,9 +368,9 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
             "question": "The report has been generated. If you approve the report, input 'yes' - once approved, you can manually edit it. If instead you want the model to edit it, input your desired changes.",
             "report": state["reports"][state["last_report_title"]]
         })
-
+        print(f"***human input in human_approval_node: {human_input}")
         if human_input["type"] == "accept":
-            return Command(goto="__end__")  # accepted: therefore, end flow   
+            return Command(goto="__end__", update={"write_report": False})  # accepted: therefore, end flow   
         elif human_input["type"] == "edit":
             return Command(goto="report_writer", update={"edit_instructions": human_input["edit_instructions"]})
         else:
