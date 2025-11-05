@@ -241,20 +241,20 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         """
         Used in analyst_agent_node to route to next node based on the report status flag.
         It decides whether to go to report writer or end flow:
-        **If it is none -> ends flow.** 
-        **If it is not_selected -> goes to report writer.**
+        **If it is none -> ends flow.** (initial state)
+        **If it is assigned -> goes to report writer.**
         
         This may seem like overkill at first, but actually it allows us not to interrupt the flow at every data analyst answer.
-        Only if the data analyst thinks it should write a report, it sets the flag to not_selected and goes to report writer.
+        Only if the data analyst thinks it should write a report, it sets the flag to assigned and goes to report writer.
         
         NOTE: this workaround was needed because nesting commands is bad behaviour - so we make a tool update a flag and then check it here.
         Basically an alternative to a conditional edge. 
         """
         print(f"***routing function in get_next_node: report status is {state['report_status']}")
-        if state["report_status"] == "assigned":
+        if state["report_status"] == "assigned":  # means the data analyst thinks it should write a report, called assign_to_report_writer_tool
             print("***routing to report writer in get_next_node")
             return "report_writer"
-        elif state["report_status"] == "none":
+        elif state["report_status"] == "none":  # initial state, no calls to assign_to_report_writer_tool yet -> ends flow
             print("***routing to end flow in get_next_node")
             return "__end__"
         else:
