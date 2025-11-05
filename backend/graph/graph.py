@@ -1,4 +1,4 @@
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 from typing_extensions import Literal
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
@@ -154,17 +154,17 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         *report_tools,
     ]
     
-    # main agent
-    agent = create_agent(
+    # ======= ANALYST AGENT =======
+    analyst_agent = create_agent(
         model=llm,
         tools=tools,
-        system_prompt=system_message,  # System prompt for the agent
-        name="agent",
+        system_prompt=system_message,  # System prompt for the analyst agent
+        name="analyst_agent",
         state_schema=MyState,
     )
 
     # ======= SUMMARIZER AGENT =======
-    # Use same API key configuration as main LLM for gpt-4o-mini
+    # Use same API key configuration as main LLM for gpt-4.1
     summarizer_kwargs = {"model": "gpt-4.1", "temperature": 0.0}
     if user_api_keys and user_api_keys.get('openai_key'):
         summarizer_kwargs['api_key'] = SecretStr(user_api_keys['openai_key'])
@@ -197,14 +197,14 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
 
     # ======= GRAPH =======
 
-    # summarization node
+    # -------SUMMARIZATION NODE-------
     async def summarize_conversation(state: MyState,
-    ) -> Command[Literal["agent"]]:  # after summary we go back to the agent
+    ) -> Command[Literal["analyst_agent"]]:  # after summary we go back to the analyst agent
         """
         Summarizes the conversation with the agent_summarizer
         (!) NOTE: the summary does not persist in chat history, it's only added as system message dynamically, at invokation, when needed.
+        It only persists in state.
         """
-
         # First, we get any existing summary
         summary = state.get("summary", "")
         # Create our summarization prompt 
@@ -230,44 +230,64 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
                 update={
                     "summary": summary, 
                     "messages": delete_messages,
-                    "token_count": -1  # reset token count
+                    "token_count": -1  # reset token count to zero
                     }, 
-                goto="agent"  # go back to the agent to answer the question
+                goto="analyst_agent"  # go back to the analyst agent to answer the question
             )   
 
-    # agent node
-    async def agent_node(state: MyState,
-    ) -> Command[Literal["summarize_conversation", "__end__"]]:  # if summary is needed go to summarize_conversation, otherwise end flow
+    # -------ROUTING FUNCTION-------
+    def get_next_node(state: MyState):
         """
-        Check token count, if it exceeds threshold goes to summarization, then comes back and invokes the agent
+        Routes to next node based on the `write_report` state flag: if it's True, goes to report writer, otherwise ends flow.
+        NOTE: this workaround was needed because nesting commands is bad behaviour - so we make a tool update a flag and then check it here.
+        Basically an alternative to a conditional edge. 
+        """
+        if state["write_report"] == True:
+            return "report_writer"
+    
+        return "__end__"
+
+
+    # -------ANALYST AGENT NODE-------
+    async def analyst_agent_node(state: MyState,
+    ) -> Command[Literal["summarize_conversation", "report_writer", "__end__"]]:  # if summary is needed go to summarize_conversation, otherwise either continues flow to report writer or ends flow
+        """
+        Main node of the graph.
+        Workflow:
+            - (1) checks token count: if it exceeds threshold goes to summarization, then comes back and continues to (2)
+            - (2) check for existing summary: if it exists, add it to system message and proceed to (3)
+            - (3) invokes the analyst agent
+            - (4) routes to next node based on the `write_report` state flag: if it's True, goes to report writer, otherwise ends flow
+
+        NOTE: the state flag is updated by the analyst agent' tool `assign_to_report_writer`.
         """ 
-        # NOTE: last thing we could add is estimate tokens in summary andreset to those instead of 0... but they are few, so fine for now
-        # Check tokens BEFORE invoking agent (Cursor-style: summarize first, then answer)
+        # TODO: last thing we could add is estimate tokens in summary and reset to those instead of 0... but they are few, so fine for now
+        # Check tokens BEFORE invoking analyst agent (Cursor-style: summarize first, then answer)
         current_tokens = state.get("token_count", 0)
         # Use thread-specific context_window or fall back to env default
         effective_context_window = context_window if context_window is not None else CONTEXT_WINDOW
         threshold = effective_context_window * 0.9
         if current_tokens >= threshold:
-            # Route to summarization FIRST, then back to agent
+            # Route to summarization FIRST, then back to analyst agent
             return Command(
                 goto="summarize_conversation"
             )
-        # If we're here, tokens are fine - proceed with agent
+        # If we're here, tokens are fine (either we summarized or we were under the threshold); proceed with analyst agent
         # get the summary
         summary = state.get("summary", "")
 
         # if the summary is not empty add it 
         if summary:
-            # Add summary to system message **just for the invocation** - it will not be persisted in messages history
+            # Add summary to system message **just for the invocation** - it will not be persisted in messages history, only persists in state
             system_message = f"Summary of conversation earlier: {summary}"
             # Let's just add the summary as a human message at the beginning
             messages_with_summary = [HumanMessage(content=system_message)] + state["messages"]
-            result = await agent.ainvoke({"messages": messages_with_summary})
+            result = await analyst_agent.ainvoke({"messages": messages_with_summary})
         else:
             messages = state["messages"]
 
         # invoke the agent
-        result = await agent.ainvoke({"messages": messages})
+        result = await analyst_agent.ainvoke({"messages": messages})
         last_msg = result["messages"][-1]
         meta = last_msg.usage_metadata
         input_tokens = meta["input_tokens"] if meta else 0
@@ -278,12 +298,81 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
                     "messages": [last_msg],
                     "token_count": input_tokens  # Accumulates via reducer
                 },
-                goto="__end__"
+                goto=get_next_node(state)  # this can be either end flow or report writer depending on the state flag
             )
 
+    # -------REPORT WRITER AGENT NODE-------
+    async def write_report_node(state: MyState,
+    ) -> Command[Literal["human_approval"]]:   # this can actually go to human approval or end, but the end part is done by the write_report_tool. So we only put "human_approval" in Literal.
+        """
+        Invokes the report writer agent.
+
+        Workflow:
+            - (1) **checks for edit instructions:** if they exist, add them to the messages and invoke the agent with the new messages; otherwise, write a new report
+            - (2) **invokes the report writer agent**. It uses the `write_report_tool`, which has its own interrupt for HITL.
+                So in that invocation, we are implicitly interrupting the tool usage for HITL. The user can either accept the tool usage or reject it:
+                    a. If the user accepts, the tool usage continues and the report is written. We are still in this node, so we go to (3)
+                    b. If the user rejects, the flow ends - this is done directly in the tool with return Command(goto="__end__")
+            - (3) **propagates the write_report_tool updates** with Command(update={...}) and goes to the last human approval node. 
+                There, we show the report to the user and ask for approval or edits.
+        """
+        # If there are edit instructions, add them to the messages and invoke the agent with the new messages
+        if state["edit_instructions"] != "": # edits: revise existing report
+            msg = f"Revise the report based on the following instructions: {state['edit_instructions']}"
+            messages = state["messages"] + [HumanMessage(content=msg)]
+        else: # no edits: write a new report
+            msg = "Write a new report based on the analysis performed and the sources used."
+            messages = state["messages"] + [HumanMessage(content=msg)]
+
+        # invoke on full state but use messages with new sys msg
+        result = await agent_report_writer.ainvoke({**state, "messages": messages})  # here the agent uses the write_report_tool, which has its own interrupt for human approval
+        last_msg = result["messages"][-1]
+
+        return Command(
+            update = {  # propagate possible updates
+                "messages": [last_msg],
+                "reports": result.get("reports", {}),  # Tool updated this
+                "last_report_title": result.get("last_report_title"),  # Tool updated this
+                "edit_instructions": ""  # clear edit instructions (if there were any, report writer already used them)
+            },
+            goto="human_approval"
+        )
+
+    # -------HUMAN APPROVAL NODE-------
+    async def human_approval_node(state: MyState,
+    ) -> Command[Literal["report_writer", "__end__"]]:   # this can either go next to report writer (if edits are requested) or end flow
+        """
+        Last human approval step before ending flow.
+        Workflow:
+            - (1) **safety check**: if no report has been written yet, raise an error;
+            - (2) **interrupt for HITL**: ask the user if they approve the report or request edits;
+            - (3) **route based on user input**: if the user approves, end flow; if the user requests edits, go back to report writer node for edits.
+        """
+        # Safety check
+        if not state["last_report_title"] or state["last_report_title"] not in state["reports"]:
+            raise ValueError("No report has been written yet!")  # if we got to human approval node, it means the report has been written, so we raise an error
+
+        # Again, we can simplify the message below, and show a nice message in frontend for the user. This message below can be only for backend
+        human_input = interrupt({
+            "question": "The report has been generated. If you approve the report, input 'yes' - once approved, you can manually edit it. If instead you want the model to edit it, input your desired changes.",
+            "report": state["reports"][state["last_report_title"]]
+        })
+
+        if human_input["type"] == "accept":
+            return Command(goto="__end__")  # accepted: therefore, end flow   
+        elif human_input["type"] == "edit":
+            return Command(goto="report_writer", update={"edit_instructions": human_input["edit_instructions"]})
+        else:
+            raise ValueError(f"Invalid response type: {human_input['type']}")
+
+    # ======= GRAPH  BUILDING =======               
+
     builder = StateGraph(MyState)
-    builder.add_node("agent", agent_node)
+    builder.add_node("analyst_agent", analyst_agent_node)
     builder.add_node("summarize_conversation", summarize_conversation)
-    builder.add_edge(START, "agent")    # notice we do not add an edge to summarize_conversation because we have Command[Literal[...]]
+    builder.add_edge(START, "analyst_agent")    # notice we do not add an edge to summarize_conversation because we have Command[Literal[...]] in analyst agent node
+    builder.add_node("report_writer", write_report_node)  #again, no edge because of Command(goto="...") in write_report_node
+    builder.add_node("human_approval", human_approval_node) # no edge because of Command(goto="...") in human_approval_node
+
     return builder.compile(checkpointer=checkpointer)
     
