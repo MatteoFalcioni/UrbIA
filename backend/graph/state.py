@@ -59,9 +59,10 @@ def list_replace_str(
     """Replace list of strings entirely instead of concatenating. Used for code logs chunks"""
     if left is None:
         left = []
+    if right is None:
+        right = []
 
     return right
-
 
 def str_replace(
     left: str | None,
@@ -70,6 +71,8 @@ def str_replace(
     """Update a string just by replacing it. Reducer needed to initialize when None"""
     if left is None:
         left = ""
+    if right is None:
+        right = ""
 
     return right
 
@@ -80,6 +83,8 @@ def status_replace(
     """Update the report status just by replacing strings. Reducer needed to initialize when None"""
     if left is None:
         left = "none"
+    if right is None:
+        right = "none"
 
     return right
 
