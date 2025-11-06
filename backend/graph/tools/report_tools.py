@@ -30,7 +30,7 @@ def assign_to_report_writer_tool(
 from langgraph.types import interrupt
 
 @tool
-def write_report_tool(
+def assign_to_report_writer(
     report_title: Annotated[str, "The title of the report"],
     report_content: Annotated[str, "The content of the report"],
     runtime: ToolRuntime
@@ -40,19 +40,19 @@ def write_report_tool(
     Interrupts the model to ask for approval before writing the report.
     """
     state = runtime.state   
-    print("***writing report in write_report_tool")
+    print("***writing report in assign_to_report_writer")
     # interrupt only if the writer is not editing an existing report
     if state["report_status"] == "assigned":  # means this is the first time the report is being written
-        print(f"***report status is 'assigned' in write_report_tool: asking for report writing approval in write_report_tool")
+        print(f"***report status is 'assigned' in assign_to_report_writer: asking for report writing approval in assign_to_report_writer")
 
         # refine this message in frontend and simplify it here in backend (the user will not see this below)
         response = interrupt(f"The model has finished its analysis and wants to write a report. To continue, input 'yes'. To reject, input 'no'.")
 
         if response["type"] == "accept":
-            print("***accepted write report in write_report_tool")
+            print("***accepted write report in assign_to_report_writer")
             pass  # accepted write report: therefore, continue flow (will update status to pending at the end of the tool)
         elif response["type"] == "reject":
-            print("***rejected write report in write_report_tool")
+            print("***rejected write report in assign_to_report_writer")
             return Command(update={
                 "messages": [
                     ToolMessage(
@@ -65,11 +65,11 @@ def write_report_tool(
             raise ValueError(f"Invalid response type: {response['type']}")
     
     elif state["report_status"] == "pending":  # means this is an edit to an existing report
-        print(f"***report status is 'pending' in write_report_tool: editing existing report in write_report_tool")
+        print(f"***report status is 'pending' in assign_to_report_writer: editing existing report in assign_to_report_writer")
         pass  # edit does not need interruptions
     
     else:
-        raise ValueError(f"Invalid report status: {state['report_status']}. Since we got to the write_report_tool from the report writer node, the report status can only be assigned or pending.")
+        raise ValueError(f"Invalid report status: {state['report_status']}. Since we got to the assign_to_report_writer from the report writer node, the report status can only be assigned or pending.")
 
     report_dict = {report_title: report_content}  # show this to the user in frontend in a nice way (like sidebar with the full report in markdown format)
 
@@ -113,37 +113,6 @@ def read_sources_tool(
     return Command(
         update = {
             "messages" : [ToolMessage(content=f"Sources: {sources_str}", tool_call_id=runtime.tool_call_id)],
-        }
-    )
-
-
-# this one below could actually be a node; it chunks the code logs before getting to the reviewer.
-# the reviewer only gets the read_code_logs_tool.
-# probably we would need to check if the code logs are too long to be processed by the model, and if so, we chunk them.
-from langchain_text_splitters import TokenTextSplitter
-@tool 
-def get_code_logs_tool(
-    runtime: ToolRuntime
-) -> Command:
-    """
-    Get the code logs used in the analysis. You should call this only once at the beginning of your fact checking workflow. 
-    You can then read the chunks with the read_code_logs_tool, specifying the index of the chunk you want to read.
-    """
-    state = runtime.state
-
-    code_logs = state["code_logs"]
-
-    code_logs_str = "\n".join([f"```python\n{code_log['input']}\n```\nstdout: ```bash\n{code_log['stdout']}\n```\nstderr: ```bash\n{code_log['stderr']}\n```" for code_log in code_logs])
-
-    # here we split the code logs into big chunks of 5000 tokens each, with big overlap for more context;
-    splitter = TokenTextSplitter(model_name="gpt-4.1", chunk_size=5000, chunk_overlap=1000)
-    code_logs_chunks = splitter.split_text(code_logs_str)
-    num_chunks = len(code_logs_chunks)
-
-    return Command(
-        update = {
-            "messages" : [ToolMessage(content=f"Code logs retrieved successfully, and split into {num_chunks} chunks. You can read chunks with the read_code_logs_tool, specifying the index of the chunk you want to read.", tool_call_id=runtime.tool_call_id)],
-            "code_logs_chunks" : code_logs_chunks,
         }
     )
 

@@ -29,6 +29,9 @@ If you revise an existing report, follow the edit instructions that you will be 
 Your functionalities sometime require human approval; just know that the user may reject your tool usage, and that is fine.
 If you see tool usage was rejected, do not worry, it was part of the workflow.
 
+"""
+
+'''
 NOTE: this run specifically is a test run, so write the report anyway even if you do not have enough information. Use your `write_report()` tool. 
 Do not ask for sources or anything, just tilte the report 'test' and write as content # test.
-"""
+'''
