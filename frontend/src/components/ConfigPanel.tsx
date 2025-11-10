@@ -5,9 +5,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { X, Save, Settings, Eye, EyeOff, Key } from 'lucide-react';
+import { X, Save, Settings, Eye, EyeOff, Key, Target } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
-import { getDefaultConfig, getThreadConfig, updateThreadConfig, getUserApiKeys, saveUserApiKeys } from '@/utils/api';
+import { getDefaultConfig, getThreadConfig, updateThreadConfig, getUserApiKeys, saveUserApiKeys, getThreadState } from '@/utils/api';
 import type { ThreadConfig } from '@/types/api';
 
 export function ConfigPanel() {
@@ -30,6 +30,7 @@ export function ConfigPanel() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [analysisObjectives, setAnalysisObjectives] = useState<string[]>([]);
   
   // API Keys state
   const [apiKeyInputs, setApiKeyInputs] = useState({
@@ -48,6 +49,7 @@ export function ConfigPanel() {
     async function loadConfig() {
       if (!currentThreadId) {
         // No thread: fetch backend defaults from /config/defaults
+        setAnalysisObjectives([]);
         try {
           const cfg = await getDefaultConfig();
           setConfig(cfg);
@@ -72,12 +74,17 @@ export function ConfigPanel() {
         return;
       }
 
-      // Thread selected: load thread-specific config
+      // Thread selected: load thread-specific config and analysis objectives
       try {
         const cfg = await getThreadConfig(currentThreadId!);
         setConfig(cfg);
+        
+        // Load analysis objectives from thread state
+        const state = await getThreadState(currentThreadId!);
+        setAnalysisObjectives(state.analysis_objectives || []);
       } catch (err) {
         console.error('Failed to load config:', err);
+        setAnalysisObjectives([]);
       }
     }
     loadConfig();
@@ -104,6 +111,28 @@ export function ConfigPanel() {
     }
     loadApiKeys();
   }, [userId, setApiKeys]);
+
+  // Refresh analysis objectives periodically when panel is open and thread is selected
+  useEffect(() => {
+    if (!isOpen || !currentThreadId) return;
+    
+    const refreshObjectives = async () => {
+      try {
+        const state = await getThreadState(currentThreadId);
+        setAnalysisObjectives(state.analysis_objectives || []);
+      } catch (err) {
+        console.error('Failed to refresh analysis objectives:', err);
+      }
+    };
+    
+    // Refresh immediately when panel opens
+    refreshObjectives();
+    
+    // Then refresh every 5 seconds while panel is open
+    const interval = setInterval(refreshObjectives, 5000);
+    
+    return () => clearInterval(interval);
+  }, [isOpen, currentThreadId]);
 
   /**
    * Save config: thread-specific or default depending on selection
@@ -291,6 +320,41 @@ export function ConfigPanel() {
             }}
           />
         </div>
+
+        {/* Analysis Objectives (read-only, set by analyst) */}
+        {currentThreadId && (
+          <div className="border-t border-gray-200 dark:border-slate-700 pt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Target size={16} className="text-gray-600 dark:text-slate-400" />
+              <label className="block text-sm font-medium">Analysis Objectives</label>
+            </div>
+            {analysisObjectives.length > 0 ? (
+              <ul className="list-disc list-inside space-y-1 px-3 py-2 rounded-lg text-sm"
+                style={{ 
+                  border: '1px solid var(--border)', 
+                  backgroundColor: 'var(--bg-secondary)', 
+                  color: 'var(--text-primary)'
+                }}
+              >
+                {analysisObjectives.map((objective, idx) => (
+                  <li key={idx} className="text-xs">{objective}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-slate-400 italic px-3 py-2 rounded-lg"
+                style={{ 
+                  border: '1px solid var(--border)', 
+                  backgroundColor: 'var(--bg-secondary)'
+                }}
+              >
+                None set
+              </p>
+            )}
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+              Objectives are set automatically by the analyst during analysis
+            </p>
+          </div>
+        )}
 
         {/* API Keys Section */}
         <div className="border-t border-gray-200 dark:border-slate-700 pt-4">
