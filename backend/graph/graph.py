@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, START
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import HumanMessage, RemoveMessage
 from langchain_text_splitters import TokenTextSplitter
 from pydantic import SecretStr
 from dotenv import load_dotenv
@@ -13,11 +13,35 @@ import os
 
 from backend.graph.prompts.summarizer import summarizer_prompt
 from backend.graph.prompts.analyst import PROMPT
-from backend.graph.tools.report_tools import assign_to_report_writer_tool, read_code_logs_tool, read_sources_tool, write_report_tool, write_source_tool, set_analysis_objectives_tool, read_analysis_objectives_tool
-from backend.graph.tools.review_tools import approve_analysis_tool, reject_analysis_tool, complete_review_tool, error_occurred_tool, update_completeness_score, update_reliability_score, update_correctness_score
 from backend.graph.prompts.report import report_prompt
 from backend.graph.prompts.reviewer import reviewer_prompt
-from backend.graph.tools.sandbox_tools import execute_code_tool, list_loaded_datasets_tool, load_dataset_tool, export_dataset_tool
+
+from backend.graph.state import MyState
+
+from backend.graph.tools.report_tools import (
+    assign_to_report_writer_tool, 
+    read_code_logs_tool, 
+    read_sources_tool, 
+    write_report_tool, 
+    write_source_tool, 
+    set_analysis_objectives_tool, 
+    read_analysis_objectives_tool
+)
+from backend.graph.tools.review_tools import (
+    end_flow_tool, 
+    approve_analysis_tool, 
+    approve_analysis_and_request_report_tool, 
+    complete_review_tool, 
+    reject_analysis_tool, 
+    update_completeness_score, 
+    update_reliability_score, update_correctness_score
+)
+from backend.graph.tools.sandbox_tools import (
+    execute_code_tool, 
+    list_loaded_datasets_tool, 
+    load_dataset_tool, 
+    export_dataset_tool
+)
 from backend.graph.tools.api_tools import (
     list_catalog_tool,
     preview_dataset_tool,
@@ -31,8 +55,6 @@ from backend.graph.tools.sit_tools import (
     compare_ortofoto,
     view_3d_model,
 )
-from backend.graph.state import MyState
-
 
 load_dotenv()
 
@@ -146,6 +168,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
     report_tools = [
         write_source_tool,
         set_analysis_objectives_tool,
+        assign_to_report_writer_tool,
     ]
     tools = [
         *api_tools,
@@ -211,12 +234,12 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         tools=[
             read_code_logs_tool, 
             read_sources_tool, 
-            read_analysis_objectives_tool,
-            assign_to_report_writer_tool, 
-            approve_analysis_tool, 
+            read_analysis_objectives_tool, 
+            approve_analysis_tool,
+            approve_analysis_and_request_report_tool, 
             reject_analysis_tool, 
             complete_review_tool, 
-            error_occurred_tool, 
+            end_flow_tool, 
             update_completeness_score, 
             update_reliability_score, 
             update_correctness_score
@@ -257,7 +280,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
             return "analyst_agent"
         elif analysis_status == "approved":
             return "continue_flow"
-        elif analysis_status == "limit_exceeded" or analysis_status == "error_occurred":
+        elif analysis_status == "limit_exceeded" or analysis_status == "end_flow":
             return "__end__"
 
         return "continue_flow"
@@ -288,7 +311,8 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
     
     def edit_report_or_end_flow(report_status: Literal["pending", "rejected"]):
         """
-        Used in write_report_node to route to next node based on the report status. The report status is updated by the write_report_tool.
+        Used in write_report_node to route to next node based on the report status. 
+        The report status is updated by the write_report_tool.
         **If it's pending -> goes to human approval.** (write_report_tool interuupted and user confirmed -> pending)
         **If it's rejected -> ends flow.** (write_report_tool interrupted and user rejected -> rejected)
         """
@@ -296,6 +320,18 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
             return "human_approval"
         elif report_status == "rejected":
             return "__end__"
+
+    def report_writer_or_reviewer(state: MyState):
+        """
+        Used in reviewer_agent_node to route to report writer directly if the report should be written directly (bypasses review).
+        """
+        report_status = state.get("report_status", "none")  # defaults to none 
+        if report_status == "assigned":
+            print(f"routing to report writer directly, report stattus: {report_status}")
+            return "report_writer"
+        else:
+            print(f"Going through reviewer; report status: {report_status}")
+            return "reviewer_agent"
 
     # -------SUMMARIZATION NODE-------
     async def summarize_conversation(state: MyState,
@@ -381,49 +417,62 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         return Command(
                 update={
                     "messages": [last_msg],
-                    "token_count": input_tokens,  # Accumulates via reducer,
-                },
+                    "token_count": input_tokens,  # Accumulates via reducer
+                    "analysis_objectives": result["analysis_objectives"],  # updated by analyst
+                    "code_logs": result["code_logs"],  # updated by analyst
+                    "sources": result["sources"],  # updated by analyst
+                    "report_status": result["report_status"],  # updated by analyst if report should be written directly (bypasses review)
+                }, 
                 goto="code_chunking_node"
             )
 
     # -------CODE CHUNKING NODE-------
     async def code_chunking_node(state: MyState,
-    ) -> Command[Literal["reviewer_agent"]]:
+    ) -> Command[Literal["reviewer_agent", "report_writer"]]:
         """
-        Chunks the code logs into smaller chunks for the reviewer agent, if the code logs are too long to be processed in one go.
+        This node does two things:
+
+        (1) **Chunking:** Chunks the code logs into smaller chunks, if the code logs are too long to be processed in one go.
         We consider the code too long if it exceeds 5000 tokens. 
         We need to estimate these tokens, since we do not want to split first and then count. 
         NOTE: estimates are more accurate for openai models since they leverage tiktoken. Still, we will probably use Sonnet 4.5 as a reviewer (stronger) 
+
+        (2) **Routing:** Routes to 
+           - reviewer agent if the analyst decided the report should be written after review
+           - report writer if the analyst decided the report should be written directly (bypasses review)
         """
+        print("***arrived to code chunking node")
+        
+        # We always check if we need to chunk, independently from routing  
         code_logs = state["code_logs"]
-
         code_logs_str = "\n".join([f"```python\n{code_log['input']}\n```\nstdout: ```bash\n{code_log['stdout']}\n```\nstderr: ```bash\n{code_log['stderr']}\n```" for code_log in code_logs])
-
         # count tokens for the logs
         token_count = reviewer_llm.get_num_tokens(code_logs_str)
 
         if token_count > 5000:
             # here we split the code logs into big chunks of 5000 tokens each, with big overlap for more context;
             splitter = TokenTextSplitter(
-                model_name=reviewer_llm.model_name, # cl100k_base is more model agnostic, and it's the same that get_num_tokens uses for claude models
+                model_name=reviewer_llm.model_name, # now using gpt4.1; otherwise, cl100k_base is more model agnostic, and it's the same that get_num_tokens uses for claude models
                 chunk_size=5000, 
                 chunk_overlap=1000
-            )  
+            )   
             code_logs_chunks = splitter.split_text(code_logs_str)
-            return Command(
-                update = {
-                    "messages" : [HumanMessage(content=f"Code logs were split into {len(code_logs_chunks)} chunks to be reviewed by the reviewer agent. You can read chunks with the read_code_logs_tool, specifying the index of the chunk you want to read.")],
-                    "code_logs_chunks" : code_logs_chunks,
-                },
-                goto="reviewer_agent"
-            )
+            print(f"***code logs were split into {len(code_logs_chunks)} chunks")
+            messages = state["messages"] + [HumanMessage(content=f"Code logs were split into {len(code_logs_chunks)} chunks.")]
         else:
-            return Command(
-                update = {
-                    "code_logs_chunks" : [code_logs_str],
-                },
-                goto="reviewer_agent"
-            )
+            print(f"***code logs were not split into chunks")                
+            code_logs_chunks = [code_logs_str]
+
+        # check if the anayst decided for direct assignment to the report writer, or if instead we need to pass through reviewer first
+        goto = report_writer_or_reviewer(state)  # no agent invocation here so evaluate routing on state, not result
+
+        return Command(
+            update={
+                "messages" : messages,
+                "code_logs_chunks" : code_logs_chunks,
+            },
+            goto=goto
+        )
 
     # -------REVIEWER AGENT NODE-------
     # here we need to invoke the reviewer agent on the chat and the code chunks
@@ -451,11 +500,15 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
                 }
             )
 
-        # invoke the reviewer agent
-        result = await agent_reviewer.ainvoke(state)
-        # remember to update state with result when routing to next node
+        # check if summary exists and if so prepend it to the messages
+        summary = state.get("summary", "")
+        if summary:
+            messages = [HumanMessage(content=f"Summary of conversation earlier: {summary}")] + state["messages"]
+        
+        messages = state["messages"] + [HumanMessage(content="Perform your review based on the analysis performed and the sources used.")]
+        result = await agent_reviewer.ainvoke({**state, "messages": messages})
 
-        # check review decision - always invoke on result !
+        # check review decision - always invoke on result!
         review_route = review_routing(result)  # will be either "analyst_agent", "continue_flow", or "__end__"
         
         if review_route == "analyst_agent":
@@ -477,11 +530,11 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         else:
             raise ValueError(f"Invalid route: {review_route}")
 
-        # if we got here, the route is "continue_flow". Thus, the analysis is correct and complete, and the reviewer may have used assign_to_report_writer.
+        # if we got here, the route is "continue_flow". Thus, the analysis is correct and complete, and the reviewer may have also assigned the report writer.
         # if it did, our report_status flag is updated to "assigned" -> go to report writer
         # otherwise it's still "none" -> end flow
-        # always invoke on result !
-        report_route = write_report_or_end_flow(result)  # will be either "report_writer", "continue_flow", or "__end__"
+        # always invoke on result!
+        report_route = write_report_or_end_flow(result)  # will be either "report_writer" or "__end__"
         if report_route == "report_writer":
             return Command(
                 goto="report_writer",
