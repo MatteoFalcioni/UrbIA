@@ -17,7 +17,6 @@ export function SettingsPage() {
   const userId = useChatStore((state) => state.userId);
   const defaultConfig = useChatStore((state) => state.defaultConfig);
   const setDefaultConfig = useChatStore((state) => state.setDefaultConfig);
-  const apiKeys = useChatStore((state) => state.apiKeys);
   const setApiKeys = useChatStore((state) => state.setApiKeys);
 
   const [config, setConfig] = useState<ThreadConfig>({
