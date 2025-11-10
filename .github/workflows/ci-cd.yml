@@ -264,7 +264,7 @@ jobs:
       
       - name: Run ESLint
         working-directory: frontend
-        run: npm run lint
+        run: npx eslint . --ext ts,tsx --report-unused-disable-directives
       
       - name: Build frontend
         working-directory: frontend
