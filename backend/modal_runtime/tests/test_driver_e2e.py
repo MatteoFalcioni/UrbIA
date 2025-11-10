@@ -37,6 +37,11 @@ def run_driver_with_commands(commands, env=None, timeout=5):
             # Read response
             line = proc.stdout.readline()
             if not line:
+                # Check if process died
+                proc.poll()
+                if proc.returncode is not None:
+                    stderr_output = proc.stderr.read()
+                    raise RuntimeError(f"Driver process ended unexpectedly with code {proc.returncode}. Stderr: {stderr_output}")
                 raise RuntimeError("Driver process ended unexpectedly")
             
             outputs.append(json.loads(line.strip()))
