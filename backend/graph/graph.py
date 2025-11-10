@@ -421,7 +421,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
                     "analysis_objectives": result["analysis_objectives"],  # updated by analyst
                     "code_logs": result["code_logs"],  # updated by analyst
                     "sources": result["sources"],  # updated by analyst
-                    "report_status": result["report_status"],  # updated by analyst if report should be written directly (bypasses review)
+                    "report_status": result.get("report_status", "none"),  # updated by analyst if report should be written directly (bypasses review)
                 }, 
                 goto="code_chunking_node"
             )
@@ -462,6 +462,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         else:
             print(f"***code logs were not split into chunks")                
             code_logs_chunks = [code_logs_str]
+            messages = state['messages']
 
         # check if the anayst decided for direct assignment to the report writer, or if instead we need to pass through reviewer first
         goto = report_writer_or_reviewer(state)  # no agent invocation here so evaluate routing on state, not result
