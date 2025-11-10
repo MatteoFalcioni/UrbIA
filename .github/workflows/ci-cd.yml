@@ -96,6 +96,9 @@ jobs:
           pip install -r requirements.txt
       
       # Start Docker Compose with the infra setup
+      - name: Create Docker network
+        run: docker network create langgraph-network || true
+      
       - name: Start Postgres with Docker Compose
         run: |
           cd infra
@@ -156,6 +159,9 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+      
+      - name: Create Docker network
+        run: docker network create langgraph-network || true
       
       - name: Start Postgres with Docker Compose
         run: |
