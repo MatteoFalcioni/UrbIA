@@ -17,6 +17,7 @@ export function SettingsPage() {
   const userId = useChatStore((state) => state.userId);
   const defaultConfig = useChatStore((state) => state.defaultConfig);
   const setDefaultConfig = useChatStore((state) => state.setDefaultConfig);
+  const apiKeys = useChatStore((state) => state.apiKeys);
   const setApiKeys = useChatStore((state) => state.setApiKeys);
 
   const [config, setConfig] = useState<ThreadConfig>({
@@ -155,12 +156,14 @@ export function SettingsPage() {
       await saveUserApiKeys(userId, keysToSave);
       
       // Update store with the keys that were saved
+      const updates: { openai?: string | null; anthropic?: string | null } = {};
       if (apiKeyInputs.openai) {
-        setApiKeys((prev) => ({ ...prev, openai: apiKeyInputs.openai }));
+        updates.openai = apiKeyInputs.openai;
       }
       if (apiKeyInputs.anthropic) {
-        setApiKeys((prev) => ({ ...prev, anthropic: apiKeyInputs.anthropic }));
+        updates.anthropic = apiKeyInputs.anthropic;
       }
+      setApiKeys(updates);
       
       setKeysSaveStatus('success');
       
