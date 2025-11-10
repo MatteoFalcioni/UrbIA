@@ -2,7 +2,7 @@
 
 **AI-powered urban data analysis platform for Bologna with sandboxed Python execution.**
 
-Built on LangGraph, this production-ready application combines conversational AI with secure code execution, civic dataset integration, and geographic visualization tools.
+Built on LangGraph, this production-ready application combines conversational AI with secure code execution, civic dataset integration, and geographic visualization tools, to give users the possibility to perform data analysis on any datasets from [Bologna's OpenData]().
 
 ---
 
@@ -10,7 +10,7 @@ Built on LangGraph, this production-ready application combines conversational AI
 
 ### 💬 Intelligent Conversations
 - Multi-threaded chat with streaming responses
-- Automatic context summarization (configurable window per thread)
+- Automatic context summarization when context window is exceeded
 - PostgreSQL-backed persistence with full message history
 - Per-thread LLM configuration (model, temperature, system prompt)
 
