@@ -527,12 +527,19 @@ async def get_thread_state(
         state_snapshot = await graph.aget_state(config)
         token_count = state_snapshot.values.get("token_count", 0) if state_snapshot.values else 0
         analysis_objectives = state_snapshot.values.get("analysis_objectives", []) if state_snapshot.values else []
+        reports = state_snapshot.values.get("reports", {}) if state_snapshot.values else {}
+        last_report_title = state_snapshot.values.get("last_report_title", "") if state_snapshot.values else ""
         context_window = cfg.context_window if (cfg and cfg.context_window) else DEFAULT_CONTEXT_WINDOW
+        
+        # Get the current report content if available
+        current_report_content = reports.get(last_report_title, "") if last_report_title else ""
         
         return {
             "token_count": token_count,
             "context_window": context_window,
-            "analysis_objectives": analysis_objectives
+            "analysis_objectives": analysis_objectives,
+            "report_title": last_report_title,
+            "report_content": current_report_content
         }
     except Exception as e:
         # If state doesn't exist yet (new thread), return 0
@@ -540,7 +547,9 @@ async def get_thread_state(
         return {
             "token_count": 0,
             "context_window": context_window,
-            "analysis_objectives": []
+            "analysis_objectives": [],
+            "report_title": "",
+            "report_content": ""
         }
 
 
@@ -829,7 +838,7 @@ async def post_message_stream(
                 # Extract text from content dict; LangChain messages expect string content
                 user_text = payload.content.get("text", str(payload.content))
                 state = {"messages": [{"role": "user", "content": user_text}]}
-                config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": 70}
+                config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": 150}
                 
                 # Context update will be emitted after agent finishes processing
                 
@@ -945,6 +954,22 @@ async def post_message_stream(
                     elif event_type == "on_tool_end":   
                         raw_input = event.get("data", {}).get("input")
                         raw_output = event.get("data", {}).get("output")
+                        
+                        # Emit objectives_updated event if set_analysis_objectives_tool was called
+                        if event_name == "set_analysis_objectives_tool":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                objectives = raw_output.update.get("analysis_objectives", [])
+                                if objectives:
+                                    yield f"data: {json.dumps({'type': 'objectives_updated', 'objectives': objectives})}\n\n"
+                        
+                        # Emit report_written event if write_report_tool was called
+                        if event_name == "write_report_tool":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                reports = raw_output.update.get("reports", {})
+                                report_title = raw_output.update.get("last_report_title", "")
+                                if reports and report_title and report_title in reports:
+                                    report_content = reports[report_title]
+                                    yield f"data: {json.dumps({'type': 'report_written', 'title': report_title, 'content': report_content})}\n\n"
                         
                         # Extract artifacts and content from Command -> ToolMessage if present
                         artifacts = None
@@ -1267,6 +1292,23 @@ async def resume_thread(
                     
                     elif event_type == "on_tool_end":
                         raw_output = event.get("data", {}).get("output")
+                        
+                        # Emit objectives_updated event if set_analysis_objectives_tool was called
+                        if event_name == "set_analysis_objectives_tool":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                objectives = raw_output.update.get("analysis_objectives", [])
+                                if objectives:
+                                    yield f"data: {json.dumps({'type': 'objectives_updated', 'objectives': objectives})}\n\n"
+                        
+                        # Emit report_written event if write_report_tool was called
+                        if event_name == "write_report_tool":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                reports = raw_output.update.get("reports", {})
+                                report_title = raw_output.update.get("last_report_title", "")
+                                if reports and report_title and report_title in reports:
+                                    report_content = reports[report_title]
+                                    yield f"data: {json.dumps({'type': 'report_written', 'title': report_title, 'content': report_content})}\n\n"
+                        
                         artifacts = None
                         tool_content = None
                         
