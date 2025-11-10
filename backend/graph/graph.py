@@ -227,8 +227,9 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
     elif os.getenv('OPENAI_API_KEY'):
         reviewer_kwargs['api_key'] = SecretStr(os.getenv('OPENAI_API_KEY'))
 
-    from langchain.agents.middleware import SummarizationMiddleware    
+    from langchain.agents.middleware import SummarizationMiddleware   
     reviewer_llm = ChatOpenAI(**reviewer_kwargs)
+    reviewer_summarizer = ChatOpenAI(*reviewer_kwargs) # summarizer for reviewer (just for safety)
     agent_reviewer = create_agent(
         model=reviewer_llm,
         tools=[
@@ -250,7 +251,7 @@ def make_graph(model_name: str | None = None, temperature: float | None = None, 
         # just for safety: summarize here as well to avoid token issues
         middleware=[
             SummarizationMiddleware(
-                model="gpt-4.1",
+                model=reviewer_summarizer,
                 max_tokens_before_summary=20000,  # Trigger summarization at 20000 tokens
                 messages_to_keep=10,  # Keep last 20 messages after summary
                 summary_prompt="Summarize the conversation keeping the relevant details about the analysis performed.",  
