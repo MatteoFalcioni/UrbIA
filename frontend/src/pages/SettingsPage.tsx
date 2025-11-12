@@ -113,21 +113,22 @@ export function SettingsPage() {
     setSaveStatus('idle');
     try {
       if (!currentThreadId) {
-        // Save as default config (PUT /config/defaults)
-        await updateThreadConfig('', config);
-        // Also update store
+        // No thread selected: update local store only (session-local defaults)
+        // Note: These won't persist across browser sessions
         setDefaultConfig({
           model: config.model,
           temperature: config.temperature,
           system_prompt: config.system_prompt,
           context_window: config.context_window,
         });
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2000);
       } else {
-        // Save thread-specific config (PUT /threads/:id/config)
+        // Save thread-specific config (POST /threads/:id/config)
         await updateThreadConfig(currentThreadId, config);
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2000);
       }
-      setSaveStatus('success');
-      setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
       console.error('Failed to save config:', err);
       setSaveStatus('error');
