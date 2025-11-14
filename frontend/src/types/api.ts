@@ -20,6 +20,7 @@ export interface Message {
   tool_output?: Record<string, any> | null;
   meta?: { agent?: string } | null;  // For subagent messages: { agent: 'data_analyst' | 'report_writer' | 'reviewer' }
   artifacts?: Artifact[];
+  created_at?: string;  // ISO timestamp from backend
 }
 
 export interface ThreadConfig {

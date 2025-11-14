@@ -482,6 +482,7 @@ class MessageOut(BaseModel):
     tool_output: Optional[dict] = None
     meta: Optional[dict] = None  # For storing agent name in subagent messages
     artifacts: list[ArtifactOut] = []
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

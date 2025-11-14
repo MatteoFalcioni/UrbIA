@@ -20,10 +20,20 @@ export function MessageList() {
   const thinkingBlock = useChatStore((state) => state.thinkingBlock);
   const toolDrafts = useChatStore((state) => state.toolDrafts);
   const subagentDrafts = useChatStore((state) => state.subagentDrafts);
+  const subagentSegments = useChatStore((state) => state.subagentSegments);
   const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const clearSubagentSegments = useChatStore((state) => state.clearSubagentSegments);
+  const prevThreadIdRef = useRef<string | null>(null);
 
   // Fetch messages when thread changes
   useEffect(() => {
+    // Clear segments for the previous thread when switching
+    if (prevThreadIdRef.current && prevThreadIdRef.current !== currentThreadId) {
+      clearSubagentSegments(prevThreadIdRef.current);
+    }
+    prevThreadIdRef.current = currentThreadId;
+
     if (!currentThreadId) {
       setMessages([]);
       return;
@@ -39,7 +49,7 @@ export function MessageList() {
       }
     }
     loadMessages();
-  }, [currentThreadId, setMessages]);
+  }, [currentThreadId, setMessages, clearSubagentSegments]);
 
   // Check if user is near bottom (to show/hide scroll button)
   const handleScroll = useCallback(() => {
@@ -60,7 +70,7 @@ export function MessageList() {
   // Auto-scroll when new AI messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingDraft, thinkingBlock, toolDrafts, subagentDrafts]);
+  }, [messages, streamingDraft, thinkingBlock, toolDrafts, subagentDrafts, subagentSegments]);
 
   if (!currentThreadId) {
     return (
@@ -98,6 +108,21 @@ export function MessageList() {
         {thinkingBlock && thinkingBlock.threadId === currentThreadId && (
           <ThinkingBlock content={thinkingBlock.content} />
         )}
+
+        {/* Finalized subagent segments (completed bubbles before tool calls) */}
+        {/* Only show segments if there's no saved message for the same agent yet */}
+        {subagentSegments
+          .filter((s) => {
+            if (s.threadId !== currentThreadId) return false;
+            // Hide segment if there's a saved message for the same agent
+            const hasSavedMessage = messages.some(
+              (msg) => msg.role === 'assistant' && msg.meta?.agent === s.agent
+            );
+            return !hasSavedMessage;
+          })
+          .map((s) => (
+            <SubagentBubble key={s.id} agent={s.agent} content={s.content} />
+          ))}
 
         {/* Inline subagent streaming drafts */}
         {subagentDrafts

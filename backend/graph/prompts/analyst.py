@@ -116,6 +116,7 @@ AI: compare_ortofoto(2017, 2023, 'Giardini Margherita')
 * Imports and dirs must be explicit.
 * Handle errors explicitly.
 * Variables and imports persist between code calls.
+* NEVER give links to the artifacts to the user. The user will see them in the artifacts panel automatically.
 
 # VISUALIZATION PREFERENCES
 

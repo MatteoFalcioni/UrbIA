@@ -117,15 +117,12 @@ def make_graph(
         anthropic_api_key = SecretStr(os.getenv('ANTHROPIC_API_KEY'))
 
     # ======= SUPERVISOR =======
-    # use claude sonnet 4.5 for supervisor, fall back to gpt-4.1 if anthropic key is not provided
-    if anthropic_api_key is None:
-        supervisor_llm_kwargs = {"model": "gpt-4.1", "temperature": 0.0}
+    # use gpt-4.1 for supervisor
+    supervisor_llm_kwargs = {"model": "gpt-4.1"}
+    if openai_api_key:
         supervisor_llm_kwargs['api_key'] = openai_api_key
-        supervisor_llm = ChatOpenAI(**supervisor_llm_kwargs)
-    else:
-        supervisor_llm_kwargs = {"model": "claude-sonnet-4-5", "temperature": 0.0}
-        supervisor_llm_kwargs['api_key'] = anthropic_api_key
-        supervisor_llm = ChatAnthropic(**supervisor_llm_kwargs)
+
+    supervisor_llm = ChatOpenAI(**supervisor_llm_kwargs)
 
     supervisor_agent = create_agent(
         model=supervisor_llm,

@@ -50,6 +50,11 @@ interface ChatStore {
   addSubagentDraft: (threadId: string, agent: string, content: string) => void;
   updateSubagentDraft: (threadId: string, agent: string, content: string) => void;
   clearSubagentDrafts: (threadId: string) => void;
+  finalizeSubagentDraft: (threadId: string, agent: string) => void;
+  
+  // Subagent segments (finalized bubbles that persist until backend saves)
+  subagentSegments: { threadId: string; agent: string; content: string; id: string; timestamp: number }[];
+  clearSubagentSegments: (threadId: string) => void;
   
   // Artifact bubbles (separate from tool drafts, persistent)
   artifactBubbles: { threadId: string; toolName: string; artifacts: Artifact[] }[];
@@ -189,6 +194,27 @@ export const useChatStore = create<ChatStore>((set) => ({
     })),
   clearSubagentDrafts: (threadId) =>
     set((state) => ({ subagentDrafts: state.subagentDrafts.filter((s) => s.threadId !== threadId) })),
+  finalizeSubagentDraft: (threadId, agent) =>
+    set((state) => {
+      const draft = state.subagentDrafts.find((s) => s.threadId === threadId && s.agent === agent);
+      if (draft && draft.content.trim()) {
+        // Move draft to segment and clear draft
+        const now = Date.now();
+        const segmentId = `segment-${now}-${Math.random().toString(36).substr(2, 9)}`;
+        return {
+          subagentSegments: [...state.subagentSegments, { threadId, agent, content: draft.content, id: segmentId, timestamp: now }],
+          subagentDrafts: state.subagentDrafts.filter((s) => !(s.threadId === threadId && s.agent === agent)),
+        };
+      }
+      // Just clear the draft if no content
+      return {
+        subagentDrafts: state.subagentDrafts.filter((s) => !(s.threadId === threadId && s.agent === agent)),
+      };
+    }),
+  
+  subagentSegments: [],
+  clearSubagentSegments: (threadId) =>
+    set((state) => ({ subagentSegments: state.subagentSegments.filter((s) => s.threadId !== threadId) })),
   
   artifactBubbles: [],
   addArtifactBubble: (threadId, toolName, artifacts) =>
