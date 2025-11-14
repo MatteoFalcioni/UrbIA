@@ -41,7 +41,6 @@ export function MessageInput() {
   const removeToolDraft = useChatStore((state) => state.removeToolDraft);
   const clearToolDrafts = useChatStore((state) => state.clearToolDrafts);
   const addSubagentDraft = useChatStore((state) => state.addSubagentDraft);
-  const updateSubagentDraft = useChatStore((state) => state.updateSubagentDraft);
   const clearSubagentDrafts = useChatStore((state) => state.clearSubagentDrafts);
   const addArtifactBubble = useChatStore((state) => state.addArtifactBubble);
   const clearArtifactBubbles = useChatStore((state) => state.clearArtifactBubbles);

@@ -4,7 +4,6 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
 import { ChevronUp } from 'lucide-react';
 import { getThreadConfig, updateThreadConfig } from '@/utils/api';
 import { useChatStore } from '@/store/chatStore';
@@ -18,7 +17,7 @@ const MODELS = [
 export function ModelSelector() {
   const currentThreadId = useChatStore((state) => state.currentThreadId);
   const defaultConfigModel = useChatStore((state) => state.defaultConfig.model);
-  const location = useLocation();
+  const defaultConfig = useChatStore((state) => state.defaultConfig);
   
   const [isOpen, setIsOpen] = useState(false);
   const [currentModel, setCurrentModel] = useState<string>('gpt-4.1');
