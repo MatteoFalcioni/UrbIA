@@ -65,7 +65,7 @@ class BolognaOpenData:
                 base_url=BASE_URL,
                 timeout=self._timeout_config,
                 limits=self._limits,
-                http2=False  # Disable HTTP/2 to avoid h2 dependency
+                http2=True  # Enable HTTP/2 for better performance
             )
             self._closed = False
 

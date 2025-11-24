@@ -382,9 +382,19 @@ async def is_dataset_too_heavy(
 # export dataset as parquet
 # ----------------
 async def get_dataset_bytes(client: BolognaOpenData, dataset_id: str) -> bytes:
+    """
+    Download dataset as parquet bytes using the provided client (with HTTP/2 enabled).
+    
+    Args:
+        client: BolognaOpenData client instance (with HTTP/2 enabled)
+        dataset_id: Dataset identifier
+        
+    Returns:
+        Raw parquet bytes
+    """
     try:
         print(f"Starting download of dataset: {dataset_id}")
-        # Export dataset as parquet bytes
+        # Use the provided client (which now has HTTP/2 enabled)
         parquet_bytes = await client.export(dataset_id, "parquet")
         print(f"Download completed. Size: {len(parquet_bytes)} bytes")
         return parquet_bytes
