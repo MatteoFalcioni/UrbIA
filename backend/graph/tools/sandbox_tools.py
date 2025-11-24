@@ -87,11 +87,12 @@ async def load_dataset_tool(
     runtime: ToolRuntime
 ) -> Command:
     """
-    Load a dataset into the Modal workspace:
-    - If exists in S3 input bucket, download from there. **The model does not need to know this.**
-    - Else, *if not too heavy*, fetch from the OpenData API.
+    First, checks if the dataset was already loaded in the workspace.
+
+    If not, then loads a dataset into the sandbox:
+    - If the dataset exists in S3 input bucket, download from there. 
+    - Else, fetch it from the OpenData API AND THEN upload it to S3 (so it's faster next time).
     Returns the written path (relative to /workspace).
-    Also checks if the dataset was already loaded in the workspace by checking if it is in the list of loaded datasets.
     """
 
     # get session id from thread id
@@ -171,17 +172,8 @@ print(json.dumps(result))
             s3.head_object(Bucket=input_bucket, Key=s3_key)
             data_bytes = s3.get_object(Bucket=input_bucket, Key=s3_key)["Body"].read()
         except Exception:
-            # Not in S3, try fetching from API if not too heavy
-            try:
-                # Check if dataset is too heavy
-                too_heavy = await is_dataset_too_heavy(client=client, dataset_id=dataset_id)
-                if too_heavy:
-                    return Command(update={"messages": [ToolMessage(
-                        content=f"Error: Dataset '{dataset_id}' is too large to fetch from the API. Inform the user that the dataset is too large to fetch from the API",
-                        tool_call_id=runtime.tool_call_id
-                    )]})
-                
-                # Fetch from API
+            # Not in S3, try fetching from API 
+            try:                
                 data_bytes = await get_dataset_bytes(client=client, dataset_id=dataset_id)
                 
                 if not data_bytes:
@@ -195,6 +187,18 @@ print(json.dumps(result))
                     content=f"Error: Failed to fetch dataset '{dataset_id}' from API. It may not exist or be unavailable. Error: {str(api_err)}",
                     tool_call_id=runtime.tool_call_id
                 )]})
+            
+            # after downloading from API, upload to S3 right away
+            try: 
+                s3.put_object(
+                    Bucket=input_bucket,
+                    Key=s3_key,
+                    Body=data_bytes,
+                    ContentType="application/parquet"
+                )
+            except Exception as upload_err:
+                # Log but don't fail - only upload to S3 failed, process can continue
+                print(f"Warning: Failed to upload dataset to S3: {upload_err}. Dataset is being loaded into workspace anyway...")
         
         # Write dataset directly to sandbox using executor.execute()
         data_b64 = base64.b64encode(data_bytes).decode("utf-8")
