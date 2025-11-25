@@ -202,6 +202,13 @@ def make_graph(
         *sit_tools,
         *report_tools,
     ]
+
+    summarizer_kwargs = {"model": "gpt-4.1"}
+    if openai_api_key:
+        summarizer_kwargs['api_key'] = openai_api_key
+
+    summarizer = ChatOpenAI(**summarizer_kwargs) # summarizer for middleware
+
     analyst_agent = create_agent(
         model=llm,
         tools=tools,
@@ -210,7 +217,7 @@ def make_graph(
         state_schema=MyState,
         middleware=[
             SummarizationMiddleware(
-                model=reviewer_summarizer,
+                model=summarizer,
                 max_tokens_before_summary=effective_context_window,  # Triggers summarization at that threshold
                 messages_to_keep=10,  # Keep last 10 messages after summary
                 summary_prompt=summarizer_prompt,  
@@ -234,7 +241,7 @@ def make_graph(
         state_schema=MyState,
         middleware=[
             SummarizationMiddleware(
-                model=reviewer_summarizer,
+                model=summarizer,
                 max_tokens_before_summary=effective_context_window,  # Trigger summarization at 20000 tokens
                 messages_to_keep=10,  # Keep last 10 messages after summary
                 summary_prompt="Summarize the conversation keeping the relevant details about the analysis performed.",  
@@ -249,7 +256,6 @@ def make_graph(
         reviewer_kwargs['api_key'] = openai_api_key
 
     reviewer_llm = ChatOpenAI(**reviewer_kwargs)
-    reviewer_summarizer = ChatOpenAI(**reviewer_kwargs) # summarizer for reviewer (just for safety)
     agent_reviewer = create_agent(
         model=reviewer_llm,
         tools=[
@@ -269,15 +275,13 @@ def make_graph(
         # just for safety: summarize here as well to avoid token issues
         middleware=[
             SummarizationMiddleware(
-                model=reviewer_summarizer,
-                max_tokens_before_summary=effective_context_window,  # Trigger summarization at 20000 tokens
+                model=summarizer,
+                max_tokens_before_summary=effective_context_window,  
                 messages_to_keep=10,  # Keep last 10 messages after summary
                 summary_prompt="Summarize the conversation keeping the relevant details about the analysis performed.",  
             ),
         ]
     )
-
-    # ======= GRAPH =======
 
     # -------ANALYST AGENT NODE-------
     async def analyst_agent_node(state: MyState,
@@ -285,34 +289,25 @@ def make_graph(
         """
         Main node of the graph.
         Workflow:
-            - (1) checks token count: if it exceeds threshold goes to summarization, then comes back and continues to (2)
-            - (2) check for existing summary: if it exists, add it to system message and proceed to (3)
-            - (3) checks if there are comments made from the reviewer and adds them to messages
-            - (4) invokes the analyst agent
-            - (5) if code_logs (produced by analysit) exceed 5000 tokens they get chunked into smaller parts
-            - (6) routes back to supervisor once it finishes the analysis
+            - (1) checks if there are comments made from the reviewer and adds them to messages
+            - (2) invokes the analyst agent
+            - (3) if code_logs (produced by analysit) exceed 5000 tokens they get chunked into smaller parts
+            - (4) routes back to supervisor once it finishes the analysis
         """ 
-        # TODO: last thing we could add is estimate tokens in summary and reset to those instead of 0... but they are few, so fine for now
-        # (1) Check tokens for token count (frontend context ring)
-        current_tokens = state.get("token_count", 0)
-        print(f"***current_tokens: {current_tokens}")
 
         messages = state["messages"]
 
-        # (2) if there are any comments made from the reviewer, use them in the analysis invocation (if there are, it means analysis was rejected)
+        # (1) if there are any comments made from the reviewer, use them in the analysis invocation (if there are, it means analysis was rejected)
         analysis_comments = state.get("analysis_comments", "")  
         if analysis_comments: # this condition does not activate if analysis_comments = ""
             messages += [HumanMessage(content=f"The reviewer reviewed your analysis and rejected it; improve your previous analysis following the following comments that the reviewer made: {analysis_comments}")]
         
-        # (3) invoke the agent
+        # (2) invoke the agent
         result = await analyst_agent.ainvoke({**state, "messages": messages})
         last_msg = result["messages"][-1]
-        meta = last_msg.usage_metadata
-        input_tokens = meta["input_tokens"] if meta else 0
-        print(f"***input_tokens: {input_tokens}")
         code_logs = result.get("code_logs", "")
 
-        # (4) check if code logs exceed token threshold: if so, chunk them 
+        # (3) check if code logs exceed token threshold: if so, chunk them 
         # NOTE: estimates are more accurate for openai models since they leverage tiktoken.
         code_logs_str = "\n".join([f"```python\n{code_log['input']}\n```\nstdout: ```bash\n{code_log['stdout']}\n```\nstderr: ```bash\n{code_log['stderr']}\n```" for code_log in code_logs])
         # count tokens
@@ -330,11 +325,10 @@ def make_graph(
             msg_update = [last_msg] 
             code_logs_chunks = [code_logs_str]
 
-        # (5) update and route back
+        # (4) update and route back
         return Command(
                 update={
                     "messages": msg_update,
-                    "token_count": input_tokens,  # Accumulates via reducer
                     "analysis_objectives": result["analysis_objectives"],  # updated by analyst
                     "code_logs" : [],  # clean code logs: we transferred their info into code_logs_chunks 
                     "code_logs_chunks" : code_logs_chunks,
@@ -373,13 +367,9 @@ def make_graph(
         
         messages += [HumanMessage(content="Perform your review based on the analysis performed and the sources used.")]
         result = await agent_reviewer.ainvoke({**state, "messages": messages})
-        last_msg = result["messages"][-1]
-        meta = last_msg.usage_metadata
-        input_tokens = meta["input_tokens"] if meta else 0
 
         return Command(
                 update={
-                    "token_count": input_tokens,  # Accumulates via reducer
                     "analysis_status": result["analysis_status"], 
                     "reroute_count": result.get("reroute_count", 0),
                     "analysis_comments" : result.get("analysis_comments", ""),
@@ -410,15 +400,12 @@ def make_graph(
         print("***invoking report writer agent in write_report_node")
         result = await agent_report_writer.ainvoke({**state, "messages": messages})  # inside here we have HITL
         last_msg = result["messages"][-1]
-        meta = last_msg.usage_metadata
-        input_tokens = meta["input_tokens"] if meta else 0
 
         return Command(
             update = {  
                 "messages": [last_msg],
                 "reports": result.get("reports", {}),  # Tool updated this
                 "last_report_title": result.get("last_report_title"),  # Tool updated this
-                "token_count": input_tokens,  # Accumulates via reducer
             },
             goto="supervisor"  
         )
