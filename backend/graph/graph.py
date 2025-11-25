@@ -3,10 +3,11 @@ from typing_extensions import Literal
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, START
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langchain_core.messages import HumanMessage, RemoveMessage
 from langchain_text_splitters import TokenTextSplitter
+from langchain.agents.middleware import SummarizationMiddleware   
+from langchain_core.messages import HumanMessage
 from pydantic import SecretStr
 from dotenv import load_dotenv
 import os
@@ -247,7 +248,6 @@ def make_graph(
     if openai_api_key:
         reviewer_kwargs['api_key'] = openai_api_key
 
-    from langchain.agents.middleware import SummarizationMiddleware   
     reviewer_llm = ChatOpenAI(**reviewer_kwargs)
     reviewer_summarizer = ChatOpenAI(**reviewer_kwargs) # summarizer for reviewer (just for safety)
     agent_reviewer = create_agent(
