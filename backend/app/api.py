@@ -409,8 +409,16 @@ async def get_thread_config(
     Returns defaults if no config exists.
     """
     from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE
+    from sqlalchemy import select
     
-    cfg = await session.get(Config, thread_id)
+    try:
+        thread_uuid = UUID(thread_id)
+    except ValueError:
+        logging.warning(f"Invalid thread_id format in get_thread_config: {thread_id}")
+        raise HTTPException(status_code=400, detail="Invalid thread_id format")
+    
+    cfg_result = await session.execute(select(Config).where(Config.thread_id == thread_uuid))
+    cfg = cfg_result.scalar_one_or_none()
     if not cfg:
         # Return env-based defaults
         from backend.config import CONTEXT_WINDOW
@@ -432,11 +440,19 @@ async def update_thread_config(
     """
     Update thread config (upsert). Frontend can set model, temperature, system_prompt per thread.
     """
-    t = await session.get(Thread, thread_id)
+    from sqlalchemy import select
+    try:
+        thread_uuid = UUID(thread_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid thread_id format")
+    
+    result = await session.execute(select(Thread).where(Thread.id == thread_uuid))
+    t = result.scalar_one_or_none()
     if not t:
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    cfg = await session.get(Config, thread_id)
+    cfg_result = await session.execute(select(Config).where(Config.thread_id == thread_uuid))
+    cfg = cfg_result.scalar_one_or_none()
     if not cfg:
         cfg = Config(thread_id=t.id)
         session.add(cfg)
@@ -883,6 +899,9 @@ async def post_message_stream(
                 # Track the last known agent node to handle cases where node becomes "model"/"tools"
                 last_known_agent_node = None
                 
+                # Track summarization state (only emit events when actual summarization LLM call happens)
+                summarization_active = False
+                
                 async for event in graph.astream_events(state, config, version="v2"):
                     event_type = event.get("event")
                     event_name = event.get("name", "")
@@ -902,7 +921,7 @@ async def post_message_stream(
                         # Extract agent name from checkpoint_ns (format: "data_analyst:uuid|model:uuid")
                         # The agent name is the first part before the first colon
                         checkpoint_parts = checkpoint_ns.split(":")
-                        if checkpoint_parts and checkpoint_parts[0] in ["supervisor", "data_analyst", "report_writer", "reviewer", "summarizer"]:
+                        if checkpoint_parts and checkpoint_parts[0] in ["supervisor", "data_analyst", "report_writer", "reviewer"]:
                             current_agent_node = checkpoint_parts[0]
                             last_known_agent_node = checkpoint_parts[0]
                             logging.debug(f"Agent node extracted from checkpoint_ns: {current_agent_node}")
@@ -934,12 +953,8 @@ async def post_message_stream(
                     current_langgraph_step = langgraph_step
                     current_node = node  # Track which node we're in
                     
-                    # Stream token chunks from the LLM (but not from summarizer)
+                    # Stream token chunks from the LLM
                     if event_type == "on_chat_model_stream":
-                        # Skip summarizer (internal agent, don't show to user)
-                        if current_agent_node == "summarizer":
-                            continue
-                        
                         # Log for debugging
                         if not current_agent_node:
                             logging.warning(f"on_chat_model_stream with no current_agent_node, node={node}, checkpoint_ns={checkpoint_ns}")
@@ -968,7 +983,9 @@ async def post_message_stream(
                                         yield f"data: {json.dumps({'type': 'subagent_token', 'agent': agent_name, 'content': chunk_text})}\n\n"
                                     else:
                                         # Fallback: if we don't know the agent, log it
-                                        logging.warning(f"Unknown agent node during streaming: {current_agent_node}, node={node}")
+                                        # Skip SummarizationMiddleware - it's not an agent, just internal summarization
+                                        if current_agent_node != "SummarizationMiddleware.before_model":
+                                            logging.warning(f"Unknown agent node during streaming: {current_agent_node}, node={node}")
                     
                     # Track agent node from chat_model_start events too (before streaming begins)
                     elif event_type == "on_chat_model_start":
@@ -978,48 +995,58 @@ async def post_message_stream(
                             current_agent_node = node
                             logging.debug(f"Agent node from chat_model_start: {current_agent_node}")
                         
-                        if current_agent_node == "summarizer":
-                            yield f"data: {json.dumps({'type': 'summarizing', 'status': 'start'})}\n\n"
-                        elif current_agent_node == "reviewer":
+                        # Detect actual summarization: check if this is SummarizationMiddleware with the summarization prompt
+                        if node == "SummarizationMiddleware.before_model":
+                            logging.debug(f"SummarizationMiddleware.before_model detected - node: {node}, event_name: {event_name}")
+                            data = event.get("data", {})
+                            input_data = data.get("input", {})
+                            messages = input_data.get("messages", [])
+                            
+                            logging.debug(f"Messages structure: type={type(messages)}, len={len(messages) if messages else 0}")
+                            
+                            # Messages can be a list of lists (nested structure from LangChain)
+                            # Check first message in first list if nested, or first message if flat
+                            first_msg = None
+                            if messages and len(messages) > 0:
+                                first_item = messages[0]
+                                logging.debug(f"First item type: {type(first_item)}, is_list: {isinstance(first_item, list)}")
+                                # Handle nested list structure: [[HumanMessage(...)]]
+                                if isinstance(first_item, list) and len(first_item) > 0:
+                                    first_msg = first_item[0]
+                                    logging.debug(f"Extracted from nested list, first_msg type: {type(first_msg)}")
+                                # Handle flat structure: [HumanMessage(...)]
+                                elif hasattr(first_item, "content"):
+                                    first_msg = first_item
+                                    logging.debug(f"Extracted from flat list, first_msg type: {type(first_msg)}")
+                            
+                            # Check if the message contains the summarization prompt
+                            if first_msg and hasattr(first_msg, "content"):
+                                content = first_msg.content
+                                logging.debug(f"Message content type: {type(content)}, length: {len(content) if isinstance(content, str) else 'N/A'}")
+                                # Check for the key phrase that identifies summarization
+                                if isinstance(content, str) and "Context Extraction Assistant" in content:
+                                    if not summarization_active:
+                                        summarization_active = True
+                                        logging.info("*** SUMMARIZATION START DETECTED ***")
+                                        yield f"data: {json.dumps({'type': 'summarizing', 'status': 'start'})}\n\n"
+                                else:
+                                    logging.debug(f"Content does not contain 'Context Extraction Assistant'. First 200 chars: {content[:200] if isinstance(content, str) else 'N/A'}")
+                            else:
+                                logging.debug(f"No first_msg or no content attribute. first_msg: {first_msg}, hasattr: {hasattr(first_msg, 'content') if first_msg else 'N/A'}")
+                        
+                        if current_agent_node == "reviewer":
                             yield f"data: {json.dumps({'type': 'reviewing', 'status': 'start'})}\n\n"
                     
-                    # Detect agent node end - send context update after any agent finishes processing
-                    # Note: supervisor is excluded because it doesn't update token_count
-                    elif event_type == "on_chain_end" and node in ["agent", "data_analyst", "reviewer", "report_writer"]:
-                        # Emit context update after any agent node finishes processing
-                        try:
-                            from backend.config import CONTEXT_WINDOW as DEFAULT_CONTEXT_WINDOW
-                            state_snapshot = await graph.aget_state(config)
-                            token_count = state_snapshot.values.get("token_count", 0) if state_snapshot.values else 0
-                            max_tokens = cfg.context_window if cfg and cfg.context_window else DEFAULT_CONTEXT_WINDOW
-                            yield f"data: {json.dumps({'type': 'context_update', 'tokens_used': token_count, 'max_tokens': max_tokens})}\n\n"
-                        except Exception as e:
-                            logging.warning(f"Failed to get state for context update: {e}")
-                    
-                    
-                    elif event_type == "on_chat_model_end" and current_agent_node == "summarizer":
-                        yield f"data: {json.dumps({'type': 'summarizing', 'status': 'done'})}\n\n"
-                        # Emit context reset immediately after summarization (token_count is now 0)
-                        from backend.config import CONTEXT_WINDOW as DEFAULT_CONTEXT_WINDOW
-                        max_tokens = cfg.context_window if cfg and cfg.context_window else DEFAULT_CONTEXT_WINDOW
-                        yield f"data: {json.dumps({'type': 'context_update', 'tokens_used': 0, 'max_tokens': max_tokens})}\n\n"
+                    # Detect SummarizationMiddleware end (when summarization happens in middleware)
+                    elif event_type == "on_chain_end" and node == "SummarizationMiddleware.before_model":
+                        # Only emit done if we actually started summarization (flag was set)
+                        if summarization_active:
+                            summarization_active = False
+                            yield f"data: {json.dumps({'type': 'summarizing', 'status': 'done'})}\n\n"
                     
                     # Detect reviewer end
                     elif event_type == "on_chat_model_end" and current_agent_node == "reviewer":
                         yield f"data: {json.dumps({'type': 'reviewing', 'status': 'done'})}\n\n"
-                    
-                    # Send context update after any agent's chat model ends (including subagents)
-                    elif event_type == "on_chat_model_end" and current_agent_node:
-                        # Skip summarizer (handled separately) and supervisor (handled by on_chain_end)
-                        if current_agent_node not in ["summarizer", "supervisor"]:
-                            try:
-                                from backend.config import CONTEXT_WINDOW as DEFAULT_CONTEXT_WINDOW
-                                state_snapshot = await graph.aget_state(config)
-                                token_count = state_snapshot.values.get("token_count", 0) if state_snapshot.values else 0
-                                max_tokens = cfg.context_window if cfg and cfg.context_window else DEFAULT_CONTEXT_WINDOW
-                                yield f"data: {json.dumps({'type': 'context_update', 'tokens_used': token_count, 'max_tokens': max_tokens})}\n\n"
-                            except Exception as e:
-                                logging.warning(f"Failed to get state for context update after {current_agent_node}: {e}")
                 
                     # Stream tool execution start
                     elif event_type == "on_tool_start":
@@ -1170,26 +1197,7 @@ async def post_message_stream(
                             
                             event_data['artifacts'] = converted_artifacts
                         
-                        yield f"data: {json.dumps(event_data)}\n\n"
-                    
-                    elif event_type == "on_chat_model_end" and current_agent_node == "summarizer":
-                        yield f"data: {json.dumps({'type': 'summarizing', 'status': 'done'})}\n\n"
-                        # Emit context reset immediately after summarization (token_count is now 0)
-                        from backend.config import CONTEXT_WINDOW as DEFAULT_CONTEXT_WINDOW
-                        max_tokens = cfg.context_window if cfg and cfg.context_window else DEFAULT_CONTEXT_WINDOW
-                        yield f"data: {json.dumps({'type': 'context_update', 'tokens_used': 0, 'max_tokens': max_tokens})}\n\n"
-                
-                    # Capture final assistant message (but not from summarizer or its sub-calls)
-                    elif event_type == "on_chat_model_end":
-                        # Skip if inside summarization context
-                        if current_agent_node == "summarizer":
-                            continue
-                        
-                        # Note: assistant_content is no longer used since we track supervisor_content and subagent_content separately
-                        # output = event.get("data", {}).get("output")
-                        # if output and hasattr(output, "content"):
-                        #     assistant_content = output.content
-                
+                        yield f"data: {json.dumps(event_data)}\n\n"                
                 # Persist using a short-lived session to avoid holding an open connection during SSE
                 a_msg_id = None
                 async with ASYNC_SESSION_MAKER() as write_sess:
@@ -1403,6 +1411,9 @@ async def resume_thread(
                 # Track the last known agent node to handle cases where node becomes "model"/"tools"
                 last_known_agent_node = None
                 
+                # Track summarization state (only emit events when actual summarization LLM call happens)
+                summarization_active = False
+                
                 # Generate a unique message_id for this resume operation
                 resume_message_id = str(uuid_module.uuid4())
                 
@@ -1426,7 +1437,7 @@ async def resume_thread(
                         # Extract agent name from checkpoint_ns (format: "data_analyst:uuid|model:uuid")
                         # The agent name is the first part before the first colon
                         checkpoint_parts = checkpoint_ns.split(":")
-                        if checkpoint_parts and checkpoint_parts[0] in ["supervisor", "data_analyst", "report_writer", "reviewer", "summarizer"]:
+                        if checkpoint_parts and checkpoint_parts[0] in ["supervisor", "data_analyst", "report_writer", "reviewer"]:
                             current_agent_node = checkpoint_parts[0]
                             last_known_agent_node = checkpoint_parts[0]
                             logging.debug(f"Agent node extracted from checkpoint_ns (resume): {current_agent_node}")
@@ -1458,10 +1469,6 @@ async def resume_thread(
                     
                     # Stream token chunks (same as POST /messages)
                     if event_type == "on_chat_model_stream":
-                        # Skip summarizer (internal agent, don't show to user)
-                        if current_agent_node == "summarizer":
-                            continue
-                        
                         # Log for debugging
                         if not current_agent_node:
                             logging.warning(f"on_chat_model_stream (resume) with no current_agent_node, node={node}, checkpoint_ns={checkpoint_ns}")
@@ -1490,40 +1497,72 @@ async def resume_thread(
                                         yield f"data: {json.dumps({'type': 'subagent_token', 'agent': agent_name, 'content': chunk_text})}\n\n"
                                     else:
                                         # Fallback: if we don't know the agent, log it
-                                        logging.warning(f"Unknown agent node during streaming (resume): {current_agent_node}, node={node}")
+                                        # Skip SummarizationMiddleware - it's not an agent, just internal summarization
+                                        if current_agent_node != "SummarizationMiddleware.before_model":
+                                            logging.warning(f"Unknown agent node during streaming (resume): {current_agent_node}, node={node}")
                     
-                    # Detect reviewer start
-                    elif event_type == "on_chat_model_start" and current_agent_node == "reviewer":
-                        yield f"data: {json.dumps({'type': 'reviewing', 'status': 'start'})}\n\n"
+                    # Track agent node from chat_model_start events too (before streaming begins)
+                    elif event_type == "on_chat_model_start":
+                        # When chat_model_start fires, node might still be the agent node
+                        # or we can infer it from the context
+                        if node and node not in ["model", "tools"]:
+                            current_agent_node = node
+                            logging.debug(f"Agent node from chat_model_start (resume): {current_agent_node}")
+                        
+                        # Detect actual summarization: check if this is SummarizationMiddleware with the summarization prompt
+                        if node == "SummarizationMiddleware.before_model":
+                            logging.debug(f"SummarizationMiddleware.before_model detected (resume) - node: {node}, event_name: {event_name}")
+                            data = event.get("data", {})
+                            input_data = data.get("input", {})
+                            messages = input_data.get("messages", [])
+                            
+                            logging.debug(f"Messages structure (resume): type={type(messages)}, len={len(messages) if messages else 0}")
+                            
+                            # Messages can be a list of lists (nested structure from LangChain)
+                            # Check first message in first list if nested, or first message if flat
+                            first_msg = None
+                            if messages and len(messages) > 0:
+                                first_item = messages[0]
+                                logging.debug(f"First item type (resume): {type(first_item)}, is_list: {isinstance(first_item, list)}")
+                                # Handle nested list structure: [[HumanMessage(...)]]
+                                if isinstance(first_item, list) and len(first_item) > 0:
+                                    first_msg = first_item[0]
+                                    logging.debug(f"Extracted from nested list (resume), first_msg type: {type(first_msg)}")
+                                # Handle flat structure: [HumanMessage(...)]
+                                elif hasattr(first_item, "content"):
+                                    first_msg = first_item
+                                    logging.debug(f"Extracted from flat list (resume), first_msg type: {type(first_msg)}")
+                            
+                            # Check if the message contains the summarization prompt
+                            if first_msg and hasattr(first_msg, "content"):
+                                content = first_msg.content
+                                logging.debug(f"Message content type (resume): {type(content)}, length: {len(content) if isinstance(content, str) else 'N/A'}")
+                                # Check for the key phrase that identifies summarization
+                                if isinstance(content, str) and "Context Extraction Assistant" in content:
+                                    if not summarization_active:
+                                        summarization_active = True
+                                        logging.info("*** SUMMARIZATION START DETECTED (resume) ***")
+                                        yield f"data: {json.dumps({'type': 'summarizing', 'status': 'start'})}\n\n"
+                                else:
+                                    logging.debug(f"Content does not contain 'Context Extraction Assistant' (resume). First 200 chars: {content[:200] if isinstance(content, str) else 'N/A'}")
+                            else:
+                                logging.debug(f"No first_msg or no content attribute (resume). first_msg: {first_msg}, hasattr: {hasattr(first_msg, 'content') if first_msg else 'N/A'}")
+                        
+                        # Detect reviewer start
+                        if current_agent_node == "reviewer":
+                            yield f"data: {json.dumps({'type': 'reviewing', 'status': 'start'})}\n\n"
+                    
+                    # Detect SummarizationMiddleware end (when summarization happens in middleware)
+                    elif event_type == "on_chain_end" and node == "SummarizationMiddleware.before_model":
+                        # Only emit done if we actually started summarization (flag was set)
+                        if summarization_active:
+                            summarization_active = False
+                            yield f"data: {json.dumps({'type': 'summarizing', 'status': 'done'})}\n\n"
                     
                     # Detect reviewer end
-                    # Send context update after any agent's chat model ends (including subagents)
-                    elif event_type == "on_chat_model_end" and current_agent_node:
-                        # Skip summarizer (handled separately) and supervisor (handled by on_chain_end)
-                        if current_agent_node not in ["summarizer", "supervisor"]:
-                            try:
-                                from backend.config import CONTEXT_WINDOW as DEFAULT_CONTEXT_WINDOW
-                                state_snapshot = await graph.aget_state(config)
-                                token_count = state_snapshot.values.get("token_count", 0) if state_snapshot.values else 0
-                                max_tokens = cfg.context_window if cfg and cfg.context_window else DEFAULT_CONTEXT_WINDOW
-                                yield f"data: {json.dumps({'type': 'context_update', 'tokens_used': token_count, 'max_tokens': max_tokens})}\n\n"
-                            except Exception as e:
-                                logging.warning(f"Failed to get state for context update after {current_agent_node} (resume): {e}")
-                            
-                            # Detect reviewer end (after context update)
-                            if current_agent_node == "reviewer":
-                                yield f"data: {json.dumps({'type': 'reviewing', 'status': 'done'})}\n\n"
-                    
-                    # Capture final assistant message (same as POST /messages)
-                    elif event_type == "on_chat_model_end":
-                        # Skip if inside summarization context
-                        if current_agent_node == "summarizer":
-                            continue
-                        
-                        # Note: assistant_content is no longer used since we track supervisor_content and subagent_content separately
-                        # output = event.get("data", {}).get("output")
-                        # if output and hasattr(output, "content"):
-                        #     assistant_content = output.content
+                    elif event_type == "on_chat_model_end" and current_agent_node == "reviewer":
+                        yield f"data: {json.dumps({'type': 'reviewing', 'status': 'done'})}\n\n"
+
                     
                     # Tool events (same as POST /messages)
                     elif event_type == "on_tool_start":

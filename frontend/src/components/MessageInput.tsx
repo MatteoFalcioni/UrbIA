@@ -6,9 +6,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
-import { ContextIndicator } from './ContextIndicator';
 import { InterruptModal } from './InterruptModal';
 import { ModelSelector } from './ModelSelector';
+import { ContextWindowSlider } from './ContextWindowSlider';
+import { CreativitySlider } from './CreativitySlider';
 import { useSSE } from '@/hooks/useSSE';
 import { createThread, updateThreadConfig, listMessages, getThreadState } from '@/utils/api';
 import type { Message } from '@/types/api';
@@ -26,7 +27,6 @@ export function MessageInput() {
   const setThinkingBlock = useChatStore((state) => state.setThinkingBlock);
   const clearThinkingBlock = useChatStore((state) => state.clearThinkingBlock);
   const setThreads = useChatStore((state) => state.setThreads);
-  const setContextUsage = useChatStore((state) => state.setContextUsage);
   const setIsSummarizing = useChatStore((state) => state.setIsSummarizing);
   const setIsReviewing = useChatStore((state) => state.setIsReviewing);
   const setAnalysisObjectives = useChatStore((state) => state.setAnalysisObjectives);
@@ -50,23 +50,16 @@ export function MessageInput() {
   // Track the currently active agent (last agent that received tokens)
   const activeAgentRef = useRef<string | null>(null);
   const clearArtifactBubbles = useChatStore((state) => state.clearArtifactBubbles);
-  const contextUsage = useChatStore((state) => state.contextUsage);
   const isSummarizing = useChatStore((state) => state.isSummarizing);
   
   // Check if user has any API keys configured
   const hasApiKeys = Boolean(apiKeys.openai || apiKeys.anthropic);
-  
-  // Use context_window from defaultConfig if contextUsage.maxTokens is still default
-  const effectiveMaxTokens = contextUsage.maxTokens === 30000 && defaultConfig.context_window 
-    ? defaultConfig.context_window 
-    : contextUsage.maxTokens;
 
-  // Update context indicator when thread changes
+  // Update thread state when thread changes
   useEffect(() => {
     if (currentThreadId) {
-      // Fetch current context state, objectives, and report for the thread
+      // Fetch current state, objectives, and report for the thread
       getThreadState(currentThreadId).then((state) => {
-        setContextUsage(state.token_count, state.context_window);
         setAnalysisObjectives(state.analysis_objectives || []);
         
         // Load report if available
@@ -78,12 +71,11 @@ export function MessageInput() {
       }).catch((err) => {
         console.error('Failed to fetch thread state:', err);
         // Fallback to default
-        setContextUsage(0, effectiveMaxTokens);
         setAnalysisObjectives([]);
         setCurrentReport(null, null);
       });
     }
-  }, [currentThreadId, setContextUsage, setAnalysisObjectives, setCurrentReport, effectiveMaxTokens]);
+  }, [currentThreadId, setAnalysisObjectives, setCurrentReport]);
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
@@ -162,11 +154,6 @@ export function MessageInput() {
         // Update immediately for faster response
         setThreads(currentThreads.map((t) => (t.id === currentThreadId ? { ...t, title } : t)));
       }
-    },
-    onContextUpdate: (tokensUsed, maxTokens) => {
-      // Update context usage circle
-      console.log('Context update received:', tokensUsed, maxTokens);
-      setContextUsage(tokensUsed, maxTokens);
     },
     onSummarizing: (status) => {
       // Show/hide summarization animation
@@ -357,7 +344,7 @@ export function MessageInput() {
             }
             rows={1}
             disabled={isStreaming || !hasApiKeys}
-            className="w-full px-4 py-3 pr-16 pb-10 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent resize-none disabled:opacity-50 transition-all duration-200 text-sm overflow-hidden"
+            className="w-full px-4 py-3 pr-16 pb-14 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent resize-none disabled:opacity-50 transition-all duration-200 text-sm overflow-hidden"
             style={{ 
               border: '1px solid var(--border)', 
               backgroundColor: 'var(--bg-secondary)', 
@@ -366,19 +353,16 @@ export function MessageInput() {
               maxHeight: '200px'
             } as React.CSSProperties}
           />
-          
-          {/* Context indicator in top-right corner */}
-          <div className="absolute top-3 right-3">
-            <ContextIndicator 
-              tokensUsed={contextUsage.tokensUsed}
-              maxTokens={effectiveMaxTokens}
-              isSummarizing={isSummarizing}
-            />
-          </div>
 
           {/* Model selector in bottom-left corner inside textarea */}
           <div className="absolute bottom-2 left-3">
             <ModelSelector />
+          </div>
+
+          {/* Sliders in bottom-right corner inside textarea */}
+          <div className="absolute bottom-3 right-2 flex flex-col gap-1">
+            <ContextWindowSlider />
+            <CreativitySlider />
           </div>
         </div>
 

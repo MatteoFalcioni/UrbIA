@@ -17,7 +17,6 @@ interface UseSSEOptions {
   onToolStart?: (name: string, input: any) => void;
   onToolEnd?: (name: string, output: any, artifacts?: Artifact[]) => void;
   onTitleUpdated?: (title: string) => void;
-  onContextUpdate?: (tokensUsed: number, maxTokens: number) => void;
   onSummarizing?: (status: 'start' | 'done') => void;
   onReviewing?: (status: 'start' | 'done') => void;
   onObjectivesUpdated?: (objectives: string[]) => void;
@@ -104,8 +103,6 @@ export function useSSE(options: UseSSEOptions) {
                   options.onToolEnd?.(event.name, event.output, event.artifacts);
                 } else if (event.type === 'title_updated') {
                   options.onTitleUpdated?.(event.title);
-                } else if (event.type === 'context_update') {
-                  options.onContextUpdate?.(event.tokens_used, event.max_tokens);
                 } else if (event.type === 'summarizing') {
                   options.onSummarizing?.(event.status);
                 } else if (event.type === 'reviewing') {
@@ -215,8 +212,6 @@ export function useSSE(options: UseSSEOptions) {
                   options.onToolEnd?.(event.name, event.output, event.artifacts);
                 } else if (event.type === 'title_updated') {
                   options.onTitleUpdated?.(event.title);
-                } else if (event.type === 'context_update') {
-                  options.onContextUpdate?.(event.tokens_used, event.max_tokens);
                 } else if (event.type === 'summarizing') {
                   options.onSummarizing?.(event.status);
                 } else if (event.type === 'reviewing') {

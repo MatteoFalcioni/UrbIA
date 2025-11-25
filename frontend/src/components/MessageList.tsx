@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, Loader2 } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 import { listMessages } from '@/utils/api';
 import type { Message } from '@/types/api';
@@ -274,6 +274,38 @@ interface ToolCallBubbleProps {
 function ToolCallBubble({ name, input }: ToolCallBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // Special handling for load_dataset tool
+  const isLoadDataset = name === 'load_dataset';
+  const datasetId = isLoadDataset && input?.dataset_id ? input.dataset_id : null;
+
+  // For load_dataset, show loading spinner instead of expandable bubble
+  if (isLoadDataset && datasetId) {
+    return (
+      <div className="flex gap-3 items-start">
+        <div 
+          className="flex-1 rounded-xl px-4 py-3 shadow-sm backdrop-blur-sm border transition-all"
+          style={{ 
+            backgroundColor: 'color-mix(in srgb, var(--bg-secondary) 60%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--border) 50%, transparent)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <Loader2 className="animate-spin" size={16} style={{ color: 'var(--text-primary)' }} />
+            <div className="flex-1">
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Loading dataset <span className="font-mono">{datasetId}</span>
+              </div>
+              <div className="text-xs mt-1 opacity-70" style={{ color: 'var(--text-secondary)' }}>
+                It may take some time if this is the first time loading this dataset (up to 2 minutes for big datasets)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default behavior for other tools
   return (
     <div 
       className="flex gap-3 items-start cursor-pointer transition-all duration-200 hover:opacity-80"

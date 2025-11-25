@@ -58,8 +58,14 @@ class SandboxExecutor:
         try:
             # Send command to driver
             command = json.dumps({"code": code})
-            self.process.stdin.write(command + "\n")
-            self.process.stdin.drain()  # Ensure data is flushed - only use drain() instead of flush()
+            command_with_newline = command + "\n"
+            
+            # Write in chunks to avoid buffer overflow for large datasets
+            chunk_size = 8192  # 8KB chunks - safe size for Modal's buffer
+            for i in range(0, len(command_with_newline), chunk_size):
+                chunk = command_with_newline[i:i + chunk_size]
+                self.process.stdin.write(chunk)
+                self.process.stdin.drain()  # Flush after each chunk to prevent buffer overflow
             
             # Read response line - use iter() to get next line from stdout
             result_line = next(iter(self.process.stdout), None)

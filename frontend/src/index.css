@@ -214,8 +214,8 @@ html, body {
 input[type="range"].range-slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 8px;
-  border-radius: 4px;
+  height: 4px;
+  border-radius: 2px;
   outline: none;
 }
 
@@ -223,8 +223,8 @@ input[type="range"].range-slider {
 input[type="range"].range-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: #1f2937;
   cursor: pointer;
@@ -240,8 +240,8 @@ input[type="range"].range-slider::-webkit-slider-thumb:hover {
 
 /* Range slider thumb - Firefox */
 input[type="range"].range-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: #1f2937;
   cursor: pointer;
@@ -258,8 +258,8 @@ input[type="range"].range-slider::-moz-range-thumb:hover {
 
 /* Range slider track - Firefox */
 input[type="range"].range-slider::-moz-range-track {
-  height: 8px;
-  border-radius: 4px;
+  height: 4px;
+  border-radius: 2px;
 }
 
 /* Markdown prose styling */

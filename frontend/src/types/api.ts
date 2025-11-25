@@ -51,7 +51,6 @@ export type SSEEvent =
   | { type: 'tool_start'; name: string; input: any }
   | { type: 'tool_end'; name: string; output: any; artifacts?: Artifact[] }
   | { type: 'title_updated'; title: string }
-  | { type: 'context_update'; tokens_used: number; max_tokens: number }
   | { type: 'summarizing'; status: 'start' | 'done' }
   | { type: 'reviewing'; status: 'start' | 'done' }
   | { type: 'objectives_updated'; objectives: string[] }
