@@ -100,8 +100,14 @@ AI: compare_ortofoto(2017, 2023, 'Giardini Margherita')
 
   * Use `load_dataset(dataset_id)` to load the dataset.
   * Use `is_geo_dataset(dataset_id)` to check if geo.
-  * If geo: **all Parquet exports are GeoParquet with WKB geometry**. Load with `geopandas.read_parquet(engine="pyarrow")`. If geometry not valid, convert WKB manually with `shapely.from_wkb` on the indicated field.
-  * If not geo: load with pandas.
+      * If geo:
+          - Load with `geopandas.read_parquet(engine="pyarrow")`.
+          - Check type: If the result is **not** a `geopandas.GeoDataFrame` (it's a standard DataFrame):
+              - Detect the geometry column (usually `geometry` or `geo_shape`).
+              - If geometry values are bytes/WKB, apply `shapely.wkb.loads`.
+              - **CRITICAL:** Convert to `GeoDataFrame`: `gdf = geopandas.GeoDataFrame(df, geometry='col_name')`.
+              - Ensure CRS is set (default to EPSG:4326 if unknown).
+      * If not geo: load with pandas.
   * Perform the analysis using the code execution tool `execute_code(code)`. If you make important modifications to existing datasets, you should save them in the workspace.
   * When you are done with code execution, use the `write_source_tool(dataset_id)` to write the dataset_id to the list of sources.
   * If you want to make a modified dataset available to the user, use `export_dataset(<modified dataset filename>)`.
