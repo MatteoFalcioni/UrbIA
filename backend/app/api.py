@@ -899,9 +899,6 @@ async def post_message_stream(
                 # Track the last known agent node to handle cases where node becomes "model"/"tools"
                 last_known_agent_node = None
                 
-                # Track summarization state (only emit events when actual summarization LLM call happens)
-                summarization_active = False
-                
                 async for event in graph.astream_events(state, config, version="v2"):
                     event_type = event.get("event")
                     event_name = event.get("name", "")
@@ -995,54 +992,8 @@ async def post_message_stream(
                             current_agent_node = node
                             logging.debug(f"Agent node from chat_model_start: {current_agent_node}")
                         
-                        # Detect actual summarization: check if this is SummarizationMiddleware with the summarization prompt
-                        if node == "SummarizationMiddleware.before_model":
-                            logging.debug(f"SummarizationMiddleware.before_model detected - node: {node}, event_name: {event_name}")
-                            data = event.get("data", {})
-                            input_data = data.get("input", {})
-                            messages = input_data.get("messages", [])
-                            
-                            logging.debug(f"Messages structure: type={type(messages)}, len={len(messages) if messages else 0}")
-                            
-                            # Messages can be a list of lists (nested structure from LangChain)
-                            # Check first message in first list if nested, or first message if flat
-                            first_msg = None
-                            if messages and len(messages) > 0:
-                                first_item = messages[0]
-                                logging.debug(f"First item type: {type(first_item)}, is_list: {isinstance(first_item, list)}")
-                                # Handle nested list structure: [[HumanMessage(...)]]
-                                if isinstance(first_item, list) and len(first_item) > 0:
-                                    first_msg = first_item[0]
-                                    logging.debug(f"Extracted from nested list, first_msg type: {type(first_msg)}")
-                                # Handle flat structure: [HumanMessage(...)]
-                                elif hasattr(first_item, "content"):
-                                    first_msg = first_item
-                                    logging.debug(f"Extracted from flat list, first_msg type: {type(first_msg)}")
-                            
-                            # Check if the message contains the summarization prompt
-                            if first_msg and hasattr(first_msg, "content"):
-                                content = first_msg.content
-                                logging.debug(f"Message content type: {type(content)}, length: {len(content) if isinstance(content, str) else 'N/A'}")
-                                # Check for the key phrase that identifies summarization
-                                if isinstance(content, str) and "Context Extraction Assistant" in content:
-                                    if not summarization_active:
-                                        summarization_active = True
-                                        logging.info("*** SUMMARIZATION START DETECTED ***")
-                                        yield f"data: {json.dumps({'type': 'summarizing', 'status': 'start'})}\n\n"
-                                else:
-                                    logging.debug(f"Content does not contain 'Context Extraction Assistant'. First 200 chars: {content[:200] if isinstance(content, str) else 'N/A'}")
-                            else:
-                                logging.debug(f"No first_msg or no content attribute. first_msg: {first_msg}, hasattr: {hasattr(first_msg, 'content') if first_msg else 'N/A'}")
-                        
                         if current_agent_node == "reviewer":
                             yield f"data: {json.dumps({'type': 'reviewing', 'status': 'start'})}\n\n"
-                    
-                    # Detect SummarizationMiddleware end (when summarization happens in middleware)
-                    elif event_type == "on_chain_end" and node == "SummarizationMiddleware.before_model":
-                        # Only emit done if we actually started summarization (flag was set)
-                        if summarization_active:
-                            summarization_active = False
-                            yield f"data: {json.dumps({'type': 'summarizing', 'status': 'done'})}\n\n"
                     
                     # Detect reviewer end
                     elif event_type == "on_chat_model_end" and current_agent_node == "reviewer":
@@ -1411,9 +1362,6 @@ async def resume_thread(
                 # Track the last known agent node to handle cases where node becomes "model"/"tools"
                 last_known_agent_node = None
                 
-                # Track summarization state (only emit events when actual summarization LLM call happens)
-                summarization_active = False
-                
                 # Generate a unique message_id for this resume operation
                 resume_message_id = str(uuid_module.uuid4())
                 
@@ -1509,55 +1457,9 @@ async def resume_thread(
                             current_agent_node = node
                             logging.debug(f"Agent node from chat_model_start (resume): {current_agent_node}")
                         
-                        # Detect actual summarization: check if this is SummarizationMiddleware with the summarization prompt
-                        if node == "SummarizationMiddleware.before_model":
-                            logging.debug(f"SummarizationMiddleware.before_model detected (resume) - node: {node}, event_name: {event_name}")
-                            data = event.get("data", {})
-                            input_data = data.get("input", {})
-                            messages = input_data.get("messages", [])
-                            
-                            logging.debug(f"Messages structure (resume): type={type(messages)}, len={len(messages) if messages else 0}")
-                            
-                            # Messages can be a list of lists (nested structure from LangChain)
-                            # Check first message in first list if nested, or first message if flat
-                            first_msg = None
-                            if messages and len(messages) > 0:
-                                first_item = messages[0]
-                                logging.debug(f"First item type (resume): {type(first_item)}, is_list: {isinstance(first_item, list)}")
-                                # Handle nested list structure: [[HumanMessage(...)]]
-                                if isinstance(first_item, list) and len(first_item) > 0:
-                                    first_msg = first_item[0]
-                                    logging.debug(f"Extracted from nested list (resume), first_msg type: {type(first_msg)}")
-                                # Handle flat structure: [HumanMessage(...)]
-                                elif hasattr(first_item, "content"):
-                                    first_msg = first_item
-                                    logging.debug(f"Extracted from flat list (resume), first_msg type: {type(first_msg)}")
-                            
-                            # Check if the message contains the summarization prompt
-                            if first_msg and hasattr(first_msg, "content"):
-                                content = first_msg.content
-                                logging.debug(f"Message content type (resume): {type(content)}, length: {len(content) if isinstance(content, str) else 'N/A'}")
-                                # Check for the key phrase that identifies summarization
-                                if isinstance(content, str) and "Context Extraction Assistant" in content:
-                                    if not summarization_active:
-                                        summarization_active = True
-                                        logging.info("*** SUMMARIZATION START DETECTED (resume) ***")
-                                        yield f"data: {json.dumps({'type': 'summarizing', 'status': 'start'})}\n\n"
-                                else:
-                                    logging.debug(f"Content does not contain 'Context Extraction Assistant' (resume). First 200 chars: {content[:200] if isinstance(content, str) else 'N/A'}")
-                            else:
-                                logging.debug(f"No first_msg or no content attribute (resume). first_msg: {first_msg}, hasattr: {hasattr(first_msg, 'content') if first_msg else 'N/A'}")
-                        
                         # Detect reviewer start
                         if current_agent_node == "reviewer":
                             yield f"data: {json.dumps({'type': 'reviewing', 'status': 'start'})}\n\n"
-                    
-                    # Detect SummarizationMiddleware end (when summarization happens in middleware)
-                    elif event_type == "on_chain_end" and node == "SummarizationMiddleware.before_model":
-                        # Only emit done if we actually started summarization (flag was set)
-                        if summarization_active:
-                            summarization_active = False
-                            yield f"data: {json.dumps({'type': 'summarizing', 'status': 'done'})}\n\n"
                     
                     # Detect reviewer end
                     elif event_type == "on_chat_model_end" and current_agent_node == "reviewer":
