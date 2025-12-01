@@ -19,7 +19,7 @@ from backend.graph.prompts.analyst import PROMPT
 from backend.graph.prompts.report import report_prompt
 from backend.graph.prompts.reviewer import reviewer_prompt
 from backend.graph.prompts.supervisor import supervisor_prompt
-from backend.graph.prompts.todo import TODOS_TOOL_DESCRIPTION
+from backend.graph.prompts.todo import TODOS_TOOL_DESCRIPTION, WRITE_TODOS_SYSTEM_PROMPT
 
 from backend.graph.state import MyState
 
@@ -222,7 +222,8 @@ def make_graph(
                 summary_prompt=summarizer_prompt,  
             ),
             TodoListMiddleware(
-                tool_description=TODOS_TOOL_DESCRIPTION  # NOTE: customized to make the agent use todo list more often 
+                tool_description=TODOS_TOOL_DESCRIPTION,  # NOTE: customized to make the agent use todo list more often 
+                system_prompt=WRITE_TODOS_SYSTEM_PROMPT
             ),
         ]
     )
