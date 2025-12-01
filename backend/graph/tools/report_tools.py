@@ -90,28 +90,15 @@ def read_code_logs_tool(
     return Command(update={"messages" : [ToolMessage(content=f"Code log chunk {index}: \n\n{code_logs_chunks[index]}", tool_call_id=runtime.tool_call_id)]})
 
 @tool
-def set_analysis_objectives_tool(
-    objectives: Annotated[list[str], "The new analysis objectives"],
-    runtime: ToolRuntime
-) -> Command:
-    """
-    Set the analysis objectives.
-    Arguments:
-        objectives: The new analysis objectives
-    """
-    print(f"***setting analysis objectives in set_analysis_objectives_tool: {objectives}")
-    return Command(update={
-        "messages": [ToolMessage(content=f"Analysis objectives set to: {objectives}", tool_call_id=runtime.tool_call_id)],
-        "analysis_objectives": objectives
-    })
-
-@tool
 def read_analysis_objectives_tool(
     runtime: ToolRuntime
 ) -> Command:
     """
-    Use this to read the analysis objectives.
+    Use this to read the analysis objectives and their status.
     """
     state = runtime.state
-    objectives = state["analysis_objectives"]
-    return Command(update={"messages" : [ToolMessage(content=f"Analysis objectives: {objectives}", tool_call_id=runtime.tool_call_id)]})
+    objectives = state.get("todos", "")
+    if objectives:
+        return Command(update={"messages" : [ToolMessage(content=f"Todos: {objectives}", tool_call_id=runtime.tool_call_id)]})
+    else:
+        return Command(update={"messages" : [ToolMessage(content="No todos found.", tool_call_id=runtime.tool_call_id)]})
