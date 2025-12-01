@@ -8,7 +8,7 @@ import { Settings, MessageSquare, PanelRightOpen } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 import { ChatSidebar } from '@/components/ChatSidebar';
 import { ArtifactDisplay } from '@/components/ArtifactDisplay';
-import { AnalysisObjectivesDropdown } from '@/components/AnalysisObjectivesDropdown';
+import { TodoListDropdown } from '@/components/TodoListDropdown';
 import { ArtifactsPanel } from '@/components/ArtifactsPanel';
 import { ApiKeyWarning } from '@/components/ApiKeyWarning';
 
@@ -111,9 +111,9 @@ export function ChatPage() {
 
       {/* Main content: Artifact Display */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header with objectives dropdown and buttons */}
+        {/* Header with todos dropdown and buttons */}
         <div className="flex items-center justify-end gap-2 p-2 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-          <AnalysisObjectivesDropdown />
+          <TodoListDropdown />
           <button
             onClick={toggleArtifactsPanel}
             className="p-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition-all duration-200 flex items-center justify-center"

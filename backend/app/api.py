@@ -547,7 +547,7 @@ async def get_thread_state(
     try:
         state_snapshot = await graph.aget_state(config)
         token_count = state_snapshot.values.get("token_count", 0) if state_snapshot.values else 0
-        analysis_objectives = state_snapshot.values.get("analysis_objectives", []) if state_snapshot.values else []
+        todos = state_snapshot.values.get("todos", []) if state_snapshot.values else []
         reports = state_snapshot.values.get("reports", {}) if state_snapshot.values else {}
         last_report_title = state_snapshot.values.get("last_report_title", "") if state_snapshot.values else ""
         context_window = cfg.context_window if (cfg and cfg.context_window) else DEFAULT_CONTEXT_WINDOW
@@ -558,17 +558,18 @@ async def get_thread_state(
         return {
             "token_count": token_count,
             "context_window": context_window,
-            "analysis_objectives": analysis_objectives,
+            "todos": todos,
             "report_title": last_report_title,
             "report_content": current_report_content
         }
     except Exception as e:
-        # If state doesn't exist yet (new thread), return 0
+        # If state doesn't exist yet (new thread), return defaults
+        logging.debug(f"Thread state not found for {thread_id}, returning defaults: {e}")
         context_window = cfg.context_window if (cfg and cfg.context_window) else DEFAULT_CONTEXT_WINDOW
         return {
             "token_count": 0,
             "context_window": context_window,
-            "analysis_objectives": [],
+            "todos": [],
             "report_title": "",
             "report_content": ""
         }
@@ -1047,6 +1048,14 @@ async def post_message_stream(
                                     report_content = reports[report_title]
                                     yield f"data: {json.dumps({'type': 'report_written', 'title': report_title, 'content': report_content})}\n\n"
                         
+                        # Emit todos_updated event if write_todos was called
+                        if event_name == "write_todos":
+                            # Output can be Command(update={'todos': ...})
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                todos = raw_output.update.get("todos", [])
+                                if todos:
+                                    yield f"data: {json.dumps({'type': 'todos_updated', 'todos': todos})}\n\n"
+                        
                         # Extract artifacts and content from Command -> ToolMessage if present
                         artifacts = None
                         tool_content = None
@@ -1512,6 +1521,14 @@ async def resume_thread(
                                 if reports and report_title and report_title in reports:
                                     report_content = reports[report_title]
                                     yield f"data: {json.dumps({'type': 'report_written', 'title': report_title, 'content': report_content})}\n\n"
+                        
+                        # Emit todos_updated event if write_todos was called
+                        if event_name == "write_todos":
+                            # Output can be Command(update={'todos': ...})
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                todos = raw_output.update.get("todos", [])
+                                if todos:
+                                    yield f"data: {json.dumps({'type': 'todos_updated', 'todos': todos})}\n\n"
                         
                         artifacts = None
                         tool_content = None

@@ -29,7 +29,7 @@ export function ThreadSelector({ onCollapse }: ThreadSelectorProps) {
   const setContextUsage = useChatStore((state) => state.setContextUsage);
   const defaultConfig = useChatStore((state) => state.defaultConfig);
   const setCurrentReport = useChatStore((state) => state.setCurrentReport);
-  const setAnalysisObjectives = useChatStore((state) => state.setAnalysisObjectives);
+  const setTodos = useChatStore((state) => state.setTodos);
   
   // Bulk selection
   const selectedThreadIds = useChatStore((state) => state.selectedThreadIds);
@@ -165,7 +165,7 @@ export function ThreadSelector({ onCollapse }: ThreadSelectorProps) {
       const { getThreadState } = await import('@/utils/api');
       const state = await getThreadState(threadId);
       setContextUsage(state.token_count, state.context_window);
-      setAnalysisObjectives(state.analysis_objectives || []);
+      setTodos(state.todos || []);
       
       // Load report if available
       if (state.report_content && state.report_title) {
@@ -173,10 +173,13 @@ export function ThreadSelector({ onCollapse }: ThreadSelectorProps) {
       } else {
         setCurrentReport(null, null);
       }
-    } catch (err) {
-      console.error('Failed to fetch thread state:', err);
+    } catch (err: any) {
+      // Ignore 404 errors when fetching thread state (new thread)
+      if (err?.response?.status !== 404) {
+        console.error('Failed to fetch thread state:', err);
+      }
       setContextUsage(0, defaultConfig.context_window ?? 30000);
-      setAnalysisObjectives([]);
+      setTodos([]);
       setCurrentReport(null, null);
     }
   }

@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import type { Thread, Message, Artifact } from '@/types/api';
+import type { Thread, Message, Artifact, Todo } from '@/types/api';
 import type { ToastType } from '@/components/Toast';
 
 interface ChatStore {
@@ -80,8 +80,8 @@ interface ChatStore {
   currentReport: string | null;
   currentReportTitle: string | null;
   setCurrentReport: (report: string | null, title?: string | null) => void;
-  analysisObjectives: string[];
-  setAnalysisObjectives: (objectives: string[]) => void;
+  todos: Todo[];
+  setTodos: (todos: Todo[]) => void;
 
   // Default configs for new threads (applied when auto-creating)
   defaultConfig: { model: string | null; temperature: number | null; system_prompt: string | null; context_window: number | null };
@@ -259,8 +259,8 @@ export const useChatStore = create<ChatStore>((set) => ({
   currentReport: null,
   currentReportTitle: null,
   setCurrentReport: (report, title) => set({ currentReport: report, currentReportTitle: title ?? null }),
-  analysisObjectives: [],
-  setAnalysisObjectives: (objectives) => set({ analysisObjectives: objectives }),
+  todos: [],
+  setTodos: (todos) => set({ todos }),
 
   defaultConfig: JSON.parse(localStorage.getItem('defaultConfig') || '{"model":null,"temperature":null,"system_prompt":null,"context_window":null}'),
   setDefaultConfig: (updates) => {

@@ -29,7 +29,7 @@ export function MessageInput() {
   const setThreads = useChatStore((state) => state.setThreads);
   const setIsSummarizing = useChatStore((state) => state.setIsSummarizing);
   const setIsReviewing = useChatStore((state) => state.setIsReviewing);
-  const setAnalysisObjectives = useChatStore((state) => state.setAnalysisObjectives);
+  const setTodos = useChatStore((state) => state.setTodos);
   const setCurrentReport = useChatStore((state) => state.setCurrentReport);
   const apiKeys = useChatStore((state) => state.apiKeys);
   
@@ -60,7 +60,7 @@ export function MessageInput() {
     if (currentThreadId) {
       // Fetch current state, objectives, and report for the thread
       getThreadState(currentThreadId).then((state) => {
-        setAnalysisObjectives(state.analysis_objectives || []);
+        setTodos(state.todos || []);
         
         // Load report if available
         if (state.report_content && state.report_title) {
@@ -69,13 +69,16 @@ export function MessageInput() {
           setCurrentReport(null, null);
         }
       }).catch((err) => {
-        console.error('Failed to fetch thread state:', err);
+        // Ignore 404 errors when fetching thread state (new thread)
+        if (err?.response?.status !== 404) {
+          console.error('Failed to fetch thread state:', err);
+        }
         // Fallback to default
-        setAnalysisObjectives([]);
+        setTodos([]);
         setCurrentReport(null, null);
       });
     }
-  }, [currentThreadId, setAnalysisObjectives, setCurrentReport]);
+  }, [currentThreadId, setTodos, setCurrentReport]);
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
@@ -163,9 +166,8 @@ export function MessageInput() {
       // Show/hide reviewing animation
       setIsReviewing(status === 'start');
     },
-    onObjectivesUpdated: (objectives) => {
-      // Update objectives in real-time when analyst sets them
-      setAnalysisObjectives(objectives);
+    onTodosUpdated: (todos) => {
+      setTodos(todos);
     },
     onReportWritten: (title, content) => {
       // Display report in artifacts panel in real-time
@@ -247,8 +249,11 @@ export function MessageInput() {
             // one aggregated message per agent, but we want to show all the segments
             // that were separated by tool calls. The segments will be cleared when
             // the user switches threads or when a new stream starts.
-          } catch (err) {
-            console.error('Failed to fetch messages after done:', err);
+          } catch (err: any) {
+            // Ignore 404 errors (thread might have been deleted)
+            if (err?.response?.status !== 404 && err?.status !== 404) {
+              console.error('Failed to fetch messages after done:', err);
+            }
           }
         }, 300);  // Slightly longer delay to ensure all messages (including subagents) are committed
       }

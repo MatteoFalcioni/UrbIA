@@ -43,6 +43,11 @@ export interface Artifact {
   created_at?: string;
 }
 
+export interface Todo {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+}
+
 // SSE event types from backend streaming
 export type SSEEvent =
   | { type: 'token'; content: string }
@@ -53,7 +58,7 @@ export type SSEEvent =
   | { type: 'title_updated'; title: string }
   | { type: 'summarizing'; status: 'start' | 'done' }
   | { type: 'reviewing'; status: 'start' | 'done' }
-  | { type: 'objectives_updated'; objectives: string[] }
+  | { type: 'todos_updated'; todos: Todo[] }
   | { type: 'report_written'; title: string; content: string }
   | { type: 'interrupt'; value: any }  // Graph interrupt for human-in-the-loop
   | { type: 'done'; message_id: string | null }

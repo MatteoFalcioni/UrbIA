@@ -3,7 +3,7 @@
  * Uses VITE_API_URL environment variable in production, falls back to /api for local dev.
  */
 
-import type { Thread, Message, ThreadConfig } from '@/types/api';
+import type { Thread, Message, ThreadConfig, Todo } from '@/types/api';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -53,7 +53,12 @@ export async function autoGenerateTitle(threadId: string): Promise<Thread> {
 
 export async function listMessages(threadId: string, limit = 50): Promise<Message[]> {
   const res = await fetch(`${BASE_URL}/threads/${threadId}/messages?limit=${limit}`);
-  if (!res.ok) throw new Error(`Failed to list messages: ${res.statusText}`);
+  if (!res.ok) {
+    const error: any = new Error(`Failed to list messages: ${res.statusText}`);
+    error.status = res.status;
+    error.response = { status: res.status };
+    throw error;
+  }
   return res.json();
 }
 
@@ -105,12 +110,17 @@ export async function updateThreadConfig(threadId: string, config: Partial<Threa
 export async function getThreadState(threadId: string): Promise<{ 
   token_count: number; 
   context_window: number; 
-  analysis_objectives: string[];
+  todos: Todo[];
   report_title: string;
   report_content: string;
 }> {
   const res = await fetch(`${BASE_URL}/threads/${threadId}/state`);
-  if (!res.ok) throw new Error(`Failed to get thread state: ${res.statusText}`);
+  if (!res.ok) {
+    const error: any = new Error(`Failed to get thread state: ${res.statusText}`);
+    error.status = res.status;
+    error.response = { status: res.status };
+    throw error;
+  }
   return res.json();
 }
 

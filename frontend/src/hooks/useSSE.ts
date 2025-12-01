@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import type { SSEEvent } from '@/types/api';
+import type { SSEEvent, Todo } from '@/types/api';
 
 import type { Artifact } from '@/types/api';
 
@@ -19,7 +19,7 @@ interface UseSSEOptions {
   onTitleUpdated?: (title: string) => void;
   onSummarizing?: (status: 'start' | 'done') => void;
   onReviewing?: (status: 'start' | 'done') => void;
-  onObjectivesUpdated?: (objectives: string[]) => void;
+  onTodosUpdated?: (todos: Todo[]) => void;
   onReportWritten?: (title: string, content: string) => void;
   onInterrupt?: (value: any) => void;  // Called when graph is interrupted (HITL)
   onDone?: (messageId: string | null) => void;
@@ -107,8 +107,8 @@ export function useSSE(options: UseSSEOptions) {
                   options.onSummarizing?.(event.status);
                 } else if (event.type === 'reviewing') {
                   options.onReviewing?.(event.status);
-                } else if (event.type === 'objectives_updated') {
-                  options.onObjectivesUpdated?.(event.objectives);
+                } else if (event.type === 'todos_updated') {
+                  options.onTodosUpdated?.(event.todos);
                 } else if (event.type === 'report_written') {
                   options.onReportWritten?.(event.title, event.content);
                 } else if (event.type === 'interrupt') {
@@ -216,8 +216,8 @@ export function useSSE(options: UseSSEOptions) {
                   options.onSummarizing?.(event.status);
                 } else if (event.type === 'reviewing') {
                   options.onReviewing?.(event.status);
-                } else if (event.type === 'objectives_updated') {
-                  options.onObjectivesUpdated?.(event.objectives);
+                } else if (event.type === 'todos_updated') {
+                  options.onTodosUpdated?.(event.todos);
                 } else if (event.type === 'report_written') {
                   options.onReportWritten?.(event.title, event.content);
                 } else if (event.type === 'interrupt') {
