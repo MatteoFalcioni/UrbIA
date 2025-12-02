@@ -9,11 +9,13 @@ export function TodoListDropdown() {
   const todos = useChatStore((state) => state.todos);
   const setTodos = useChatStore((state) => state.setTodos);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [userHasClosed, setUserHasClosed] = useState(false);
 
   // Load todos once when thread changes
   useEffect(() => {
     if (!currentThreadId) {
       setTodos([]);
+      setUserHasClosed(false); // Reset user preference on thread change
       return;
     }
 
@@ -30,7 +32,18 @@ export function TodoListDropdown() {
     };
 
     loadTodos();
+    setUserHasClosed(false); // Reset user preference on thread change
   }, [currentThreadId, setTodos]);
+
+  // Auto-expand when todos are added (unless user manually closed it)
+  useEffect(() => {
+    if (todos.length > 0 && !userHasClosed) {
+      setIsExpanded(true);
+    } else if (todos.length === 0) {
+      setIsExpanded(false);
+      setUserHasClosed(false); // Reset when todos are cleared
+    }
+  }, [todos.length, userHasClosed]);
 
   if (!currentThreadId) return null;
 
@@ -55,7 +68,15 @@ export function TodoListDropdown() {
   return (
     <div className="relative">
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          setIsExpanded(!isExpanded);
+          // Track that user manually toggled the dropdown
+          if (isExpanded) {
+            setUserHasClosed(true);
+          } else {
+            setUserHasClosed(false);
+          }
+        }}
         className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 hover:bg-gray-100 dark:hover:bg-slate-700"
         style={{ color: 'var(--text-primary)' }}
       >
