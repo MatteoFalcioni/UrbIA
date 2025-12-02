@@ -1295,6 +1295,417 @@ class ResumeRequest(BaseModel):
     resume_value: dict  # The resume data from user (type: accept/reject/edit, etc.)
 
 
+@router.post("/threads/{thread_id}/continue")
+async def continue_thread(
+    thread_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Continue execution from the last checkpoint after user stopped execution.
+    
+    This is different from /resume which handles explicit interrupts with user decisions.
+    This endpoint simply continues from where the graph left off when the SSE stream was cancelled.
+    
+    The checkpointer automatically saves state after each node execution, so we can
+    resume by calling the graph with None (empty state update) and the same thread_id.
+    """
+    from backend.graph.graph import make_graph
+    from backend.main import get_thread_lock, _checkpointer_cm
+    from backend.graph.context import set_db_session, set_thread_id, clear_db_session, clear_thread_id
+    import uuid as uuid_module
+    
+    # Verify checkpointer is initialized
+    if not _checkpointer_cm:
+        raise HTTPException(status_code=500, detail="Checkpointer not initialized")
+    
+    # Get thread to verify it exists
+    result = await session.execute(select(Thread).where(Thread.id == UUID(thread_id)))
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    # Get thread config
+    cfg_result = await session.execute(select(Config).where(Config.thread_id == UUID(thread_id)))
+    cfg = cfg_result.scalar_one_or_none()
+    
+    # Get user API keys
+    user_api_keys = await get_user_api_keys_for_llm(t.user_id, session)
+    
+    # Create graph with SAME config as original (checkpointer will restore state)
+    graph = make_graph(
+        model_name=cfg.model if cfg else None,
+        temperature=cfg.temperature if cfg else None,
+        system_prompt=cfg.system_prompt if cfg else None,
+        context_window=cfg.context_window if cfg else None,
+        checkpointer=_checkpointer_cm[0],  # Reuse global singleton checkpointer
+        user_api_keys=user_api_keys,
+    )
+    
+    # SAME config with SAME thread_id - checkpointer will restore state
+    config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": 150}
+    
+    # First, check if there's actually something to continue
+    try:
+        state_snapshot = await graph.aget_state(config)
+        if not state_snapshot.next:
+            # No pending nodes - execution was already complete
+            raise HTTPException(status_code=400, detail="No execution to continue - thread is already complete")
+        logging.info(f"Continuing thread {thread_id} from node(s): {state_snapshot.next}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.warning(f"Could not check thread state: {e}")
+        # Continue anyway - let the graph handle it
+    
+    # Stream response using SSE
+    async def stream_continue():
+        from backend.db.session import ASYNC_SESSION_MAKER
+        
+        try:
+            lock = get_thread_lock(str(thread_id))
+            async with lock:
+                # Set context variables for tools
+                set_db_session(session)
+                set_thread_id(uuid_module.UUID(str(thread_id)))
+                
+                # Variables to track content per agent (same as POST /messages)
+                current_langgraph_step = None
+                current_node = None
+                current_agent_node = None
+                supervisor_content = ""
+                subagent_content = {}
+                subagent_order = []
+                subagent_segments = {}
+                subagent_segment_counters = {}
+                tool_calls = []
+                last_known_agent_node = None
+                
+                # Generate a unique message_id for this continue operation
+                continue_message_id = str(uuid_module.uuid4())
+                
+                # Key: Continue from checkpoint by calling astream_events with None
+                # LangGraph will automatically resume from last saved state
+                async for event in graph.astream_events(None, config, version="v2"):
+                    event_type = event.get("event")
+                    event_name = event.get("name", "")
+                    event_meta = event.get("metadata", {})
+                    node = event_meta.get("langgraph_node")
+                    checkpoint_ns = event_meta.get("langgraph_checkpoint_ns", "")
+                    langgraph_step = event_meta.get("langgraph_step")
+                    
+                    # Track which agent node we're currently in
+                    if node and node not in ["model", "tools"]:
+                        current_agent_node = node
+                        last_known_agent_node = node
+                        logging.debug(f"Agent node updated (continue): {current_agent_node}")
+                    elif node in ["model", "tools"] and checkpoint_ns:
+                        checkpoint_parts = checkpoint_ns.split(":")
+                        if checkpoint_parts and checkpoint_parts[0] in ["supervisor", "data_analyst", "report_writer", "reviewer"]:
+                            current_agent_node = checkpoint_parts[0]
+                            last_known_agent_node = checkpoint_parts[0]
+                            logging.debug(f"Agent node extracted from checkpoint_ns (continue): {current_agent_node}")
+                        elif last_known_agent_node:
+                            current_agent_node = last_known_agent_node
+                    
+                    if event_type == "on_chain_start" and node and node not in ["model", "tools"]:
+                        current_agent_node = node
+                        last_known_agent_node = node
+                        logging.debug(f"Agent node from chain_start (continue): {current_agent_node}")
+                    
+                    # Check for interrupts (graph might hit another interrupt)
+                    data = event.get("data", {})
+                    chunk = data.get("chunk")
+                    
+                    if chunk and isinstance(chunk, dict) and '__interrupt__' in chunk:
+                        logging.info(f"🛑 INTERRUPT DETECTED (continue) - chunk keys: {chunk.keys()}")
+                        interrupt_tuple = chunk["__interrupt__"]
+                        interrupt_obj = interrupt_tuple[0]
+                        interrupt_value = interrupt_obj.value
+                        logging.info(f"Interrupt value (continue): {interrupt_value}")
+                        yield f"data: {json.dumps({'type': 'interrupt', 'value': to_jsonable(interrupt_value)})}\n\n"
+                    
+                    current_langgraph_step = langgraph_step
+                    current_node = node
+                    
+                    # Stream token chunks
+                    if event_type == "on_chat_model_stream":
+                        if not current_agent_node:
+                            logging.warning(f"on_chat_model_stream (continue) with no current_agent_node, node={node}, checkpoint_ns={checkpoint_ns}")
+                        
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk:
+                            if hasattr(chunk, "content") and chunk.content:
+                                chunk_text = extract_text_from_content(chunk.content)
+                                if chunk_text:
+                                    if current_agent_node == "supervisor":
+                                        supervisor_content += chunk_text
+                                        yield f"data: {json.dumps({'type': 'token', 'content': chunk_text})}\n\n"
+                                    elif current_agent_node in ["data_analyst", "report_writer", "reviewer"]:
+                                        agent_name = current_agent_node
+                                        if agent_name not in subagent_content:
+                                            subagent_content[agent_name] = ""
+                                            if agent_name not in subagent_order:
+                                                subagent_order.append(agent_name)
+                                        subagent_content[agent_name] += chunk_text
+                                        logging.debug(f"Streaming subagent token (continue): {agent_name}, content length: {len(chunk_text)}")
+                                        yield f"data: {json.dumps({'type': 'subagent_token', 'agent': agent_name, 'content': chunk_text})}\n\n"
+                                    else:
+                                        if current_agent_node != "SummarizationMiddleware.before_model":
+                                            logging.warning(f"Unknown agent node during streaming (continue): {current_agent_node}, node={node}")
+                    
+                    elif event_type == "on_chat_model_start":
+                        if node and node not in ["model", "tools"]:
+                            current_agent_node = node
+                            logging.debug(f"Agent node from chat_model_start (continue): {current_agent_node}")
+                        
+                        if current_agent_node == "reviewer":
+                            yield f"data: {json.dumps({'type': 'reviewing', 'status': 'start'})}\n\n"
+                    
+                    elif event_type == "on_chat_model_end" and current_agent_node == "reviewer":
+                        yield f"data: {json.dumps({'type': 'reviewing', 'status': 'done'})}\n\n"
+                    
+                    elif event_type == "on_tool_start":
+                        tool_input = event.get("data", {}).get("input")
+                        yield f"data: {json.dumps({'type': 'tool_start', 'name': event_name, 'input': to_jsonable(tool_input)})}\n\n"
+                        
+                        # Save current segment for the active agent before tool starts
+                        if current_agent_node and current_agent_node in ["data_analyst", "report_writer", "reviewer"]:
+                            agent_name = current_agent_node
+                            if agent_name in subagent_content and subagent_content[agent_name].strip():
+                                if agent_name not in subagent_segments:
+                                    subagent_segments[agent_name] = []
+                                    subagent_segment_counters[agent_name] = 0
+                                
+                                segment_content = subagent_content[agent_name]
+                                segment_index = subagent_segment_counters[agent_name]
+                                subagent_segments[agent_name].append({
+                                    "content": segment_content,
+                                    "segment_index": segment_index
+                                })
+                                subagent_segment_counters[agent_name] += 1
+                                subagent_content[agent_name] = ""
+                                logging.debug(f"Saved segment {segment_index} for {agent_name} (continue), content length: {len(segment_content)}")
+                    
+                    elif event_type == "on_tool_end":
+                        raw_output = event.get("data", {}).get("output")
+                        raw_input = event.get("data", {}).get("input")
+                        
+                        # Emit objectives_updated event
+                        if event_name == "set_analysis_objectives_tool":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                objectives = raw_output.update.get("analysis_objectives", [])
+                                if objectives:
+                                    yield f"data: {json.dumps({'type': 'objectives_updated', 'objectives': objectives})}\n\n"
+                        
+                        # Emit report_written event
+                        if event_name == "write_report_tool":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                reports = raw_output.update.get("reports", {})
+                                report_title = raw_output.update.get("last_report_title", "")
+                                if reports and report_title and report_title in reports:
+                                    report_content = reports[report_title]
+                                    yield f"data: {json.dumps({'type': 'report_written', 'title': report_title, 'content': report_content})}\n\n"
+                        
+                        # Emit todos_updated event
+                        if event_name == "write_todos":
+                            if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                                todos = raw_output.update.get("todos", [])
+                                if todos:
+                                    yield f"data: {json.dumps({'type': 'todos_updated', 'todos': todos})}\n\n"
+                        
+                        artifacts = None
+                        tool_content = None
+                        
+                        if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                            messages = raw_output.update.get("messages", [])
+                            if messages and len(messages) > 0:
+                                tool_msg = messages[0]
+                                if hasattr(tool_msg, "artifact") and tool_msg.artifact:
+                                    artifacts = tool_msg.artifact
+                                if hasattr(tool_msg, "content"):
+                                    tool_content = tool_msg.content
+                        elif hasattr(raw_output, "artifact"):
+                            artifacts = raw_output.artifact
+                            if hasattr(raw_output, "content"):
+                                tool_content = raw_output.content
+                        
+                        tool_output_for_db = {"content": tool_content} if isinstance(tool_content, str) else to_jsonable(tool_content) if tool_content else to_jsonable(raw_output)
+                        
+                        # Extract tool_call_id
+                        tool_call_id = None
+                        if hasattr(raw_output, "update") and isinstance(raw_output.update, dict):
+                            messages = raw_output.update.get("messages", [])
+                            if messages and len(messages) > 0:
+                                tool_msg = messages[0]
+                                if hasattr(tool_msg, "tool_call_id"):
+                                    tool_call_id = tool_msg.tool_call_id
+                        
+                        tool_calls.append({
+                            "name": event_name,
+                            "input": to_jsonable(raw_input),
+                            "output": tool_output_for_db,
+                            "tool_call_id": tool_call_id,
+                        })
+                        
+                        event_data = {
+                            'type': 'tool_end',
+                            'name': event_name,
+                            'output': tool_output_for_db
+                        }
+                        if artifacts:
+                            from backend.artifacts.storage import generate_presigned_url_from_s3_key
+                            from backend.artifacts.ingest import ingest_artifact_metadata
+                            
+                            saved_artifact_dicts = []
+                            async with ASYNC_SESSION_MAKER() as artifact_sess:
+                                for art in artifacts:
+                                    if 's3_key' in art and tool_call_id:
+                                        try:
+                                            artifact_dict = await ingest_artifact_metadata(
+                                                session=artifact_sess,
+                                                thread_id=t.id,
+                                                s3_key=art['s3_key'],
+                                                sha256=art.get('sha256', ''),
+                                                filename=art.get('name', 'unknown'),
+                                                mime=art.get('mime', 'application/octet-stream'),
+                                                size=art.get('size', 0),
+                                                session_id=str(t.id),
+                                                tool_call_id=tool_call_id
+                                            )
+                                            saved_artifact_dicts.append(artifact_dict)
+                                        except Exception as e:
+                                            logging.warning(f"Failed to ingest artifact {art.get('name')}: {e}")
+                                await artifact_sess.commit()
+                            
+                            converted_artifacts = []
+                            for art_dict in saved_artifact_dicts:
+                                try:
+                                    converted = {
+                                        'id': art_dict['id'],
+                                        'name': art_dict['name'],
+                                        'mime': art_dict['mime'],
+                                        'size': art_dict['size'],
+                                    }
+                                    matching_art = next((a for a in artifacts if a.get('sha256') == art_dict['sha256']), None)
+                                    if matching_art and 's3_key' in matching_art:
+                                        converted['url'] = generate_presigned_url_from_s3_key(matching_art['s3_key'])
+                                    converted_artifacts.append(converted)
+                                except Exception as e:
+                                    logging.warning(f"Failed to prepare artifact for SSE: {e}")
+                                    continue
+                            event_data['artifacts'] = converted_artifacts
+                        
+                        yield f"data: {json.dumps(event_data)}\n\n"
+                
+                # Persist messages to database
+                a_msg_id = None
+                async with ASYNC_SESSION_MAKER() as write_sess:
+                    # Tool messages first
+                    for idx, tool_call in enumerate(tool_calls):
+                        tool_call_id = tool_call.get("id") or tool_call.get("tool_call_id")
+                        tool_input = tool_call.get("input", {})
+                        if isinstance(tool_input, dict) and tool_call_id:
+                            tool_input = {**tool_input, "tool_call_id": tool_call_id}
+                        
+                        tool_msg = Message(
+                            thread_id=t.id,
+                            message_id=f"tool:{continue_message_id}:{idx}",
+                            role="tool",
+                            tool_name=tool_call["name"],
+                            tool_input=tool_input,
+                            tool_output=tool_call.get("output"),
+                            content=None,
+                            meta={"tool_call_id": tool_call_id} if tool_call_id else None,
+                        )
+                        write_sess.add(tool_msg)
+
+                    # Save supervisor message FIRST
+                    if supervisor_content:
+                        a_msg = Message(
+                            thread_id=t.id,
+                            message_id=f"assistant:{continue_message_id}",
+                            role="assistant",
+                            content={"text": supervisor_content} if isinstance(supervisor_content, str) else supervisor_content,
+                        )
+                        write_sess.add(a_msg)
+                        await write_sess.flush()
+                        a_msg_id = str(a_msg.id)
+                    
+                    import asyncio
+                    await asyncio.sleep(0.01)
+                    
+                    # Save subagent segments AFTER supervisor
+                    for agent_name in subagent_order:
+                        if agent_name in subagent_segments:
+                            for segment in subagent_segments[agent_name]:
+                                segment_content = segment["content"]
+                                segment_index = segment["segment_index"]
+                                subagent_msg = Message(
+                                    thread_id=t.id,
+                                    message_id=f"subagent:{continue_message_id}:{agent_name}:segment:{segment_index}",
+                                    role="assistant",
+                                    content={"text": segment_content} if isinstance(segment_content, str) else segment_content,
+                                    meta={"agent": agent_name, "segment_index": segment_index},
+                                )
+                                write_sess.add(subagent_msg)
+                                await asyncio.sleep(0.01)
+                        
+                        if agent_name in subagent_content and subagent_content[agent_name].strip():
+                            remaining_content = subagent_content[agent_name]
+                            segment_index = subagent_segment_counters.get(agent_name, 0)
+                            subagent_msg = Message(
+                                thread_id=t.id,
+                                message_id=f"subagent:{continue_message_id}:{agent_name}:segment:{segment_index}",
+                                role="assistant",
+                                content={"text": remaining_content} if isinstance(remaining_content, str) else remaining_content,
+                                meta={"agent": agent_name, "segment_index": segment_index},
+                            )
+                            write_sess.add(subagent_msg)
+                            await asyncio.sleep(0.01)
+                    
+                    # Handle any subagents not in the tracked order
+                    for agent_name in subagent_segments:
+                        if agent_name not in subagent_order:
+                            for segment in subagent_segments[agent_name]:
+                                segment_content = segment["content"]
+                                segment_index = segment["segment_index"]
+                                subagent_msg = Message(
+                                    thread_id=t.id,
+                                    message_id=f"subagent:{continue_message_id}:{agent_name}:segment:{segment_index}",
+                                    role="assistant",
+                                    content={"text": segment_content} if isinstance(segment_content, str) else segment_content,
+                                    meta={"agent": agent_name, "segment_index": segment_index},
+                                )
+                                write_sess.add(subagent_msg)
+                    
+                    for agent_name, agent_content in subagent_content.items():
+                        if agent_name not in subagent_order and agent_content.strip():
+                            if agent_name not in subagent_segments:
+                                subagent_msg = Message(
+                                    thread_id=t.id,
+                                    message_id=f"subagent:{continue_message_id}:{agent_name}",
+                                    role="assistant",
+                                    content={"text": agent_content} if isinstance(agent_content, str) else agent_content,
+                                    meta={"agent": agent_name},
+                                )
+                                write_sess.add(subagent_msg)
+                    
+                    await write_sess.commit()
+                    if not a_msg_id and supervisor_content:
+                        logging.warning(f"No supervisor message ID after commit for continue thread {thread_id}")
+
+                yield f"data: {json.dumps({'type': 'done', 'message_id': a_msg_id})}\n\n"
+                
+        except Exception as e:
+            logging.error(f"Continue failed for thread {thread_id}: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        finally:
+            clear_db_session()
+            clear_thread_id()
+    
+    return StreamingResponse(stream_continue(), media_type="text/event-stream")
+
+
 @router.post("/threads/{thread_id}/resume")
 async def resume_thread(
     thread_id: str,

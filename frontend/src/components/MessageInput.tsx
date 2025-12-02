@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Square, Play } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 import { InterruptModal } from './InterruptModal';
 import { ModelSelector } from './ModelSelector';
@@ -94,7 +94,7 @@ export function MessageInput() {
   }, [input, adjustTextareaHeight]);
   
   // SSE hook with handlers for streaming events
-  const { sendMessage, resumeThread, isStreaming } = useSSE({
+  const { sendMessage, resumeThread, stopStream, continueThread, isStreaming, canContinue } = useSSE({
     onThinking: (content) => {
       // Set thinking block (Claude extended thinking)
       if (currentThreadId) {
@@ -209,6 +209,15 @@ export function MessageInput() {
         // Short delay to ensure backend has committed all messages to DB
         setTimeout(async () => {
           try {
+            // Refetch thread state to get updated todos (persisted in graph state)
+            const state = await getThreadState(currentThreadId);
+            setTodos(state.todos || []);
+            
+            // Load report if available
+            if (state.report_content && state.report_title) {
+              setCurrentReport(state.report_content, state.report_title);
+            }
+            
             const fetchedMessages = await listMessages(currentThreadId);
             const chronologicalMessages = [...fetchedMessages].reverse();
             
@@ -271,6 +280,19 @@ export function MessageInput() {
       }
     },
   });
+
+  /**
+   * Handle continue button click.
+   */
+  async function handleContinue() {
+    if (!currentThreadId || !canContinue) return;
+
+    // Clear any finalized subagent segments from previous turns
+    clearSubagentSegments(currentThreadId);
+    
+    // Continue execution from last checkpoint
+    await continueThread(currentThreadId);
+  }
 
   /**
    * Send message on Enter (Shift+Enter for new line).
@@ -371,8 +393,40 @@ export function MessageInput() {
           </div>
         </div>
 
-        {/* Send button (hidden when streaming) */}
-        {!isStreaming && (
+        {/* Stop button (shown when streaming) */}
+        {isStreaming && (
+          <button
+            type="button"
+            onClick={stopStream}
+            className="px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md"
+            style={{ 
+              backgroundColor: 'var(--user-message-bg)', 
+              color: 'var(--user-message-text)'
+            }}
+            title="Stop execution"
+          >
+            <Square size={18} fill="currentColor" />
+          </button>
+        )}
+
+        {/* Continue button (shown after user stops) */}
+        {!isStreaming && canContinue && currentThreadId && (
+          <button
+            type="button"
+            onClick={handleContinue}
+            className="px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md"
+            style={{ 
+              backgroundColor: 'var(--user-message-bg)', 
+              color: 'var(--user-message-text)'
+            }}
+            title="Continue from where you stopped"
+          >
+            <Play size={18} fill="currentColor" />
+          </button>
+        )}
+
+        {/* Send button (shown when not streaming and can't continue) */}
+        {!isStreaming && !canContinue && (
           <button
             type="submit"
             disabled={!input.trim() || !currentThreadId || !hasApiKeys}

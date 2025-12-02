@@ -66,7 +66,9 @@ It is critical that you mark todos as completed as soon as you are done with a s
 
 ## Important To-Do List Usage Notes to Remember
 - The `write_todos` tool should never be called multiple times in parallel.
-- Don't be afraid to revise the To-Do list as you go. New information may reveal new tasks that need to be done, or old tasks that are irrelevant."""
+- Don't be afraid to revise the To-Do list as you go. New information may reveal new tasks that need to be done, or old tasks that are irrelevant.
+
+"""
 
 
 # taken out: 

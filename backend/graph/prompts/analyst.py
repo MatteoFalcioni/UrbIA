@@ -46,7 +46,7 @@ Use these tools to perform complex analysis on the datasets.
 ## SOURCE AND OBJECTIVES TOOLS
 
 * `write_source_tool(dataset_id)` - Write the dataset_id to the list of sources.
-* `write_todos` - update todo list of your analysis. Use this tool very frequently while performing analysis.
+* `write_todos` - update todo list of your analysis. Use this tool very frequently while performing analysis. Remember to update the status of the todos right after you complete a task.
  
 ## MAP TOOLS
 
