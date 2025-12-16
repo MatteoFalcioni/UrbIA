@@ -21,6 +21,7 @@ interface UseSSEOptions {
   onReviewing?: (status: 'start' | 'done') => void;
   onTodosUpdated?: (todos: Todo[]) => void;
   onReportWritten?: (title: string, content: string) => void;
+  onScoreUpdated?: (score: number) => void;  // Analysis quality score from reviewer
   onInterrupt?: (value: any) => void;  // Called when graph is interrupted (HITL)
   onDone?: (messageId: string | null) => void;
   onError?: (error: string) => void;
@@ -113,6 +114,8 @@ export function useSSE(options: UseSSEOptions) {
                   options.onTodosUpdated?.(event.todos);
                 } else if (event.type === 'report_written') {
                   options.onReportWritten?.(event.title, event.content);
+                } else if (event.type === 'score_updated') {
+                  options.onScoreUpdated?.(event.score);
                 } else if (event.type === 'interrupt') {
                   options.onInterrupt?.(event.value);
                   setIsStreaming(false);  // Stream ends after interrupt
@@ -228,6 +231,8 @@ export function useSSE(options: UseSSEOptions) {
                   options.onTodosUpdated?.(event.todos);
                 } else if (event.type === 'report_written') {
                   options.onReportWritten?.(event.title, event.content);
+                } else if (event.type === 'score_updated') {
+                  options.onScoreUpdated?.(event.score);
                 } else if (event.type === 'interrupt') {
                   options.onInterrupt?.(event.value);
                   setIsStreaming(false);
@@ -360,6 +365,8 @@ export function useSSE(options: UseSSEOptions) {
                   options.onTodosUpdated?.(event.todos);
                 } else if (event.type === 'report_written') {
                   options.onReportWritten?.(event.title, event.content);
+                } else if (event.type === 'score_updated') {
+                  options.onScoreUpdated?.(event.score);
                 } else if (event.type === 'interrupt') {
                   options.onInterrupt?.(event.value);
                   setIsStreaming(false);

@@ -11,6 +11,7 @@ import { ArtifactDisplay } from '@/components/ArtifactDisplay';
 import { TodoListDropdown } from '@/components/TodoListDropdown';
 import { ArtifactsPanel } from '@/components/ArtifactsPanel';
 import { ApiKeyWarning } from '@/components/ApiKeyWarning';
+import { ScoreBar } from '@/components/ScoreBar';
 
 export function ChatPage() {
   const currentThreadId = useChatStore((state) => state.currentThreadId);
@@ -20,6 +21,7 @@ export function ChatPage() {
   const toggleArtifactsPanel = useChatStore((s) => s.toggleArtifactsPanel);
   const artifactsPanelWidth = useChatStore((s) => s.artifactsPanelWidth);
   const setArtifactsPanelWidth = useChatStore((s) => s.setArtifactsPanelWidth);
+  const analysisScore = useChatStore((s) => s.analysisScore);
   
   const isResizing = useRef(false);
   const startWidth = useRef(0);
@@ -111,10 +113,17 @@ export function ChatPage() {
 
       {/* Main content: Artifact Display */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header with todos dropdown and buttons */}
-        <div className="flex items-center justify-end gap-2 p-2 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-          <TodoListDropdown />
-          <button
+        {/* Header with score bar, todos dropdown and buttons */}
+        <div className="flex items-center justify-between gap-2 p-2 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+          {/* Left side: Score bar */}
+          <div className="flex-1 min-w-0">
+            <ScoreBar score={analysisScore} />
+          </div>
+          
+          {/* Right side: Controls */}
+          <div className="flex items-center gap-2">
+            <TodoListDropdown />
+            <button
             onClick={toggleArtifactsPanel}
             className="p-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition-all duration-200 flex items-center justify-center"
             title="Toggle artifacts panel"
@@ -128,6 +137,7 @@ export function ChatPage() {
           >
             <Settings size={18} className="text-gray-500 dark:text-slate-400" />
           </button>
+          </div>
         </div>
         
         {/* Artifact display area */}

@@ -31,6 +31,7 @@ export function MessageInput() {
   const setIsReviewing = useChatStore((state) => state.setIsReviewing);
   const setTodos = useChatStore((state) => state.setTodos);
   const setCurrentReport = useChatStore((state) => state.setCurrentReport);
+  const setAnalysisScore = useChatStore((state) => state.setAnalysisScore);
   const apiKeys = useChatStore((state) => state.apiKeys);
   
   const [input, setInput] = useState('');
@@ -68,6 +69,13 @@ export function MessageInput() {
         } else {
           setCurrentReport(null, null);
         }
+        
+        // Load score if available (from reviewer)
+        if (state.final_score !== undefined && state.final_score !== null) {
+          setAnalysisScore(state.final_score);
+        } else {
+          setAnalysisScore(null);
+        }
       }).catch((err) => {
         // Ignore 404 errors when fetching thread state (new thread)
         if (err?.response?.status !== 404) {
@@ -76,9 +84,15 @@ export function MessageInput() {
         // Fallback to default
         setTodos([]);
         setCurrentReport(null, null);
+        setAnalysisScore(null);
       });
+    } else {
+      // No thread selected - reset all state
+      setTodos([]);
+      setCurrentReport(null, null);
+      setAnalysisScore(null);
     }
-  }, [currentThreadId, setTodos, setCurrentReport]);
+  }, [currentThreadId, setTodos, setCurrentReport, setAnalysisScore]);
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
@@ -178,6 +192,10 @@ export function MessageInput() {
         useChatStore.getState().toggleArtifactsPanel();
       }
     },
+    onScoreUpdated: (score) => {
+      // Update analysis quality score from reviewer
+      setAnalysisScore(score);
+    },
     onInterrupt: (value) => {
       // Graph interrupted - show HITL modal
       console.log('Graph interrupted:', value);
@@ -216,6 +234,11 @@ export function MessageInput() {
             // Load report if available
             if (state.report_content && state.report_title) {
               setCurrentReport(state.report_content, state.report_title);
+            }
+            
+            // Load score if available (from reviewer)
+            if (state.final_score !== undefined && state.final_score !== null) {
+              setAnalysisScore(state.final_score);
             }
             
             const fetchedMessages = await listMessages(currentThreadId);

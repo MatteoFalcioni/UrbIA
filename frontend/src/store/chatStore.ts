@@ -82,6 +82,10 @@ interface ChatStore {
   setCurrentReport: (report: string | null, title?: string | null) => void;
   todos: Todo[];
   setTodos: (todos: Todo[]) => void;
+  
+  // Analysis quality score (from reviewer)
+  analysisScore: number | null;
+  setAnalysisScore: (score: number | null) => void;
 
   // Default configs for new threads (applied when auto-creating)
   defaultConfig: { model: string | null; temperature: number | null; system_prompt: string | null; context_window: number | null };
@@ -261,6 +265,9 @@ export const useChatStore = create<ChatStore>((set) => ({
   setCurrentReport: (report, title) => set({ currentReport: report, currentReportTitle: title ?? null }),
   todos: [],
   setTodos: (todos) => set({ todos }),
+  
+  analysisScore: null,
+  setAnalysisScore: (score) => set({ analysisScore: score }),
 
   defaultConfig: JSON.parse(localStorage.getItem('defaultConfig') || '{"model":null,"temperature":null,"system_prompt":null,"context_window":null}'),
   setDefaultConfig: (updates) => {

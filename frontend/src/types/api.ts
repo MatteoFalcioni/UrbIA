@@ -60,6 +60,7 @@ export type SSEEvent =
   | { type: 'reviewing'; status: 'start' | 'done' }
   | { type: 'todos_updated'; todos: Todo[] }
   | { type: 'report_written'; title: string; content: string }
+  | { type: 'score_updated'; score: number }  // Reviewer final score (0-1)
   | { type: 'interrupt'; value: any }  // Graph interrupt for human-in-the-loop
   | { type: 'done'; message_id: string | null }
   | { type: 'error'; error: string };
