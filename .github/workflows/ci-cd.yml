@@ -73,7 +73,7 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
           echo "Testing Modal sandbox executor..."
-          pytest backend/modal_runtime/tests/test_sandbox.py -v --tb=short || echo "⚠️ Sandbox tests skipped (Modal tokens may not be configured)"
+          pytest backend/modal_runtime/tests/test_sandbox.py -v --tb=short
       
       - name: Test sandbox tools (integration tests with executor.execute)
         env:
@@ -85,7 +85,7 @@ jobs:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
         run: |
           echo "Testing sandbox tools (load, list, export datasets)..."
-          pytest tests/graph/test_sandbox_tools.py tests/tools/test_load_to_sandbox.py tests/tools/test_export_from_sandbox.py -v --tb=short || echo "⚠️ Sandbox tools tests skipped (Modal/S3 may not be configured)"
+          pytest tests/graph/test_sandbox_tools.py tests/tools/test_load_to_sandbox.py tests/tools/test_export_from_sandbox.py -v --tb=short
 
   # Test database migrations with Docker Postgres
   test-migrations:
@@ -149,7 +149,7 @@ jobs:
           # Only test downgrade if we have a revision and it's not base
           if [ ! -z "$CURRENT" ] && [ "$CURRENT" != "base" ]; then
             echo "Testing downgrade..."
-            alembic downgrade -1 || echo "⚠️ Downgrade failed (might be at base or have branching)"
+            alembic downgrade -1
             alembic upgrade head
             echo "✅ Migration cycle successful"
           else
@@ -240,10 +240,10 @@ jobs:
         run: pip install ruff black
       
       - name: Run ruff
-        run: ruff check backend/ --exit-zero
+        run: ruff check backend/
       
       - name: Check formatting with black
-        run: black --check backend/ --diff || true
+        run: black --check backend/ --diff
 
   # Test frontend build and types
   test-frontend:
