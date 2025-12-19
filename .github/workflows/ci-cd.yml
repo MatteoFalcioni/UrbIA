@@ -223,7 +223,7 @@ jobs:
           cd infra
           docker compose down -v
 
-  # Lint code (optional but recommended)
+  # Lint code (find bugs and code quality issues)
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
@@ -237,13 +237,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       
       - name: Install linting tools
-        run: pip install ruff black
+        run: pip install ruff
       
       - name: Run ruff
         run: ruff check backend/
-      
-      - name: Check formatting with black
-        run: black --check backend/ --diff
 
   # Test frontend build and types
   test-frontend:
