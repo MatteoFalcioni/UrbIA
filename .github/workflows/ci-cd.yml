@@ -67,6 +67,14 @@ jobs:
         env:
           S3_DISABLE_UPLOAD: "1"
       
+      - name: Deploy Modal app (updates driver.py in Modal image)
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          echo "Deploying Modal app to update driver.py..."
+          modal deploy backend/modal_runtime/app.py
+      
       - name: Test Modal sandbox executor (requires Modal tokens)
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
