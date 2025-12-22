@@ -42,8 +42,9 @@ class SandboxExecutor:
         # Start driver with optional environment variables
         self.process = self.sandbox.exec(
             "python",
+            "-u",  # Force unbuffered output to prevent hangs in CI
             "/root/driver.py",
-            bufsize=1,  # CRITICAL: bufsize=1 for line buffering!
+            bufsize=0,  # CRITICAL: bufsize=0 for unbuffered I/O
             workdir=base_dir,  # Set working directory for driver process
             env=self.env,  # Pass custom env vars to driver process
         )

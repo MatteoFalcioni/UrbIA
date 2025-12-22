@@ -110,13 +110,21 @@ def driver_program():
     except Exception:
         pass
 
+    # DEBUG LOG
+    print("DEBUG: Driver starting...", file=sys.stderr, flush=True)
+
     while True:
         try:
+            # DEBUG LOG
+            print("DEBUG: Waiting for command on stdin...", file=sys.stderr, flush=True)
+            
             # Read command from stdin
             line = sys.stdin.readline()
             if not line:
                 print("Driver: EOF received, exiting gracefully", file=sys.stderr, flush=True)
                 break
+            
+            print(f"DEBUG: Received command length: {len(line)}", file=sys.stderr, flush=True)
 
             command = json.loads(line.strip())
 
