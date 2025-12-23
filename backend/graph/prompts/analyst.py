@@ -52,6 +52,7 @@ Use these tools to perform complex analysis on the datasets.
 * `write_todos` - update todo list of your analysis. Use this tool very frequently while performing analysis. Remember to update the status of the todos right after you complete a task.
 
 Note for `write_todos`: do not write in your todos anything about performing reviews of the analysis or writing a report of the analysis. That is the job of your colleagues. 
+Avoid referencing reviews or report in the todos. 
 
 # DATASET ANALYSIS WORKFLOW
 
