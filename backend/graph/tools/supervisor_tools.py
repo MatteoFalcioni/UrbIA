@@ -3,6 +3,15 @@ from langchain.tools import tool, ToolRuntime
 from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command, interrupt
 
+# ------ developer note -------
+# NOTE: we are considering 'an analysis' as one conversation turn: user -> graph -> user. 
+# This may be an oversimplification:
+# what if the user is not satisfied with an operation performed by the analyst and wants to change a specific action?
+# Like, say, remake a plot. The analyst loses sources, code and todos when this new task is assigned, but the 'analysys' is still the same.
+# Right now we are sweeping this under the rug, but may be causing problems in the future.
+# A fix could be to use a key for each analysis, say an 'analysis title'. It could be AI generated as well.
+# -----------------------------
+
 
 # === Handoff Tools ===
 # NOTE: these are structured with graph.PARENT because we do not have a supervisor node right now.
@@ -39,7 +48,7 @@ def create_handoff_tool(
 
     return handoff_tool
 
-
+# === Handoff Tools with Human In The Loop ===
 def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None):
     name = f"transfer_to_{agent_name}"
     description = description or f"Ask {agent_name} for help."
@@ -51,7 +60,7 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
     ) -> Command:
 
         usr_response = interrupt(
-            value=f"The agent supervisor wants to call the {agent_name} to perform the following task: *{task}*.\nDo you approve?"
+            value=f"The agent supervisor wants to call the {agent_name} to perform the following task: *{task}*\nDo you approve?"
         )
 
         # Handle case where usr_response might be None or not properly structured
@@ -100,11 +109,55 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
     return handoff_tool_HITL
 
 
+# === Handoff Tool with state management for data analyst agent ===
+def create_handoff_to_data_analyst():
+
+    # hardcoded for data analyst agent
+    name = "transfer_to_data_analyst"
+    description = "Assign task to the data analyst agent."
+
+    @tool(name, description=description)
+    def handoff_to_data_analyst(
+        task: Annotated[str, "The task that the subagent should perform"],
+        runtime: ToolRuntime,
+    ) -> Command:
+        """
+        Handoff tool with "state management".
+        "State management" means that we apply operations to the state passed from the supervisor to the data analyst before assignment.
+        Specifically, we want to reset all state vars that should be treated as independent between different analysis, i.e.:
+            - todos
+            - code logs
+            - code logs chunks
+            - sources
+        """
+
+        tool_msg = ToolMessage(
+            content=f"Successfully transferred to data analyst",
+            tool_call_id=runtime.tool_call_id,
+        )
+        task_msg = HumanMessage(
+            content=f"The agent supervisor advices you to perform the following task : \n{task}"
+        )
+        state = runtime.state
+
+        return Command(
+            goto="data_analyst",
+            update={
+                **state, 
+                "messages": state["messages"] + [tool_msg] + [task_msg],
+                "todos" : [],  # reset todos before each analysis
+                "code_logs" : [],  # reset code logs 
+                "code_logs_chunks" : [],  # reset code logs chunks
+                "sources" : []  # reset soures
+                },
+            graph=Command.PARENT,
+        )
+
+    return handoff_to_data_analyst
+
+
 # Handoffs
-assign_to_analyst = create_handoff_tool(
-    agent_name="data_analyst",
-    description="Assign task to the data analyst agent.",
-)
+assign_to_analyst = create_handoff_to_data_analyst()
 
 assign_to_reviewer = create_handoff_tool(
     agent_name="reviewer",
@@ -116,6 +169,3 @@ assign_to_report_writer = create_handoff_tool_HITL(
     agent_name="report_writer",
     description="Assign task to the report writer agent.",
 )
-
-# === Show code tool ===
-# Just a tool to show to the user the code executed by the analyst 

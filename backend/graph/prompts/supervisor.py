@@ -49,7 +49,8 @@ The Reviewer will get back to you with the result of its review:
 
 ## Note for routing to the reviewer
 
-Note that sometimes the analysis can be very simple, maybe just an exploratory analysis or a simple check if a dataset exists. 
+Note that sometimes the analysis can be very simple, maybe just an exploratory analysis or a simple check if a dataset exists.
+Also, the user request could just be to modify some specific action of a previous analysis (like, say, remake a plot in a different way). 
 In those cases, there is no need to perform a review, thus no need to route to the reviewer. 
 
 # Report Writer

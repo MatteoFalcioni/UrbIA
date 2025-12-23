@@ -344,7 +344,7 @@ def make_graph(
         return Command(
             update={
                 "messages": msg_update,
-                "code_logs": [],  # clean code logs: we transferred their info into code_logs_chunks
+                # NOTE: not resetting code logs to [] here, 'cause the supervisor does it at assignment to data analyst 
                 "code_logs_chunks": code_logs_chunks,
                 "sources": sources,  # updated by analyst
                 "analysis_comments": "",  # reset analysis comments (if there were any, we used them)
@@ -399,7 +399,6 @@ def make_graph(
         completeness_score = result["completeness_score"]
         relevancy_score = result["relevancy_score"]
         final_score = (completeness_score + relevancy_score) / 2
-
         # NOTE: right now we are not handling the case where the review should not be approved because of a low score:
         # instead we always approve and just show the score in frontend.
 
