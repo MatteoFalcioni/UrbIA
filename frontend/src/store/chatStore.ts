@@ -77,6 +77,8 @@ interface ChatStore {
   toggleArtifactsPanel: () => void;
   artifactsPanelWidth: number;
   setArtifactsPanelWidth: (px: number) => void;
+  codeLogs: Array<Record<string, string>>;
+  setCodeLogs: (logs: Array<Record<string, string>>) => void;
   reports: { title: string; content: string }[];
   setReports: (reports: { title: string; content: string }[]) => void;
   currentReport: string | null;
@@ -264,6 +266,8 @@ export const useChatStore = create<ChatStore>((set) => ({
     localStorage.setItem('artifactsPanelWidth', String(clamped));
     set({ artifactsPanelWidth: clamped });
   },
+  codeLogs: [],
+  setCodeLogs: (logs) => set({ codeLogs: logs }),
   reports: [],
   setReports: (reports) => set({ reports }),
   currentReport: null,

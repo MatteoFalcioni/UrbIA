@@ -32,6 +32,7 @@ export function MessageInput() {
   const setTodos = useChatStore((state) => state.setTodos);
   const setCurrentReport = useChatStore((state) => state.setCurrentReport);
   const setReports = useChatStore((state) => state.setReports);
+  const setCodeLogs = useChatStore((state) => state.setCodeLogs);
   const setAnalysisScore = useChatStore((state) => state.setAnalysisScore);
   const setAnalysisStatus = useChatStore((state) => state.setAnalysisStatus);
   const apiKeys = useChatStore((state) => state.apiKeys);
@@ -81,6 +82,9 @@ export function MessageInput() {
         }
         setReports(orderedReports);
 
+        // Load code logs (all code blocks for last analysis)
+        setCodeLogs(state.code_logs || []);
+
         // Set current report to last one if available
         if (state.report_content && state.report_title) {
           setCurrentReport(state.report_content, state.report_title);
@@ -100,6 +104,7 @@ export function MessageInput() {
         setTodos([]);
         setReports([]);
         setCurrentReport(null, null);
+        setCodeLogs([]);
         setAnalysisScore(null);
         setAnalysisStatus(null);
       });
@@ -108,10 +113,11 @@ export function MessageInput() {
       setTodos([]);
       setReports([]);
       setCurrentReport(null, null);
+      setCodeLogs([]);
       setAnalysisScore(null);
       setAnalysisStatus(null);
     }
-  }, [currentThreadId, setTodos, setCurrentReport, setReports, setAnalysisScore, setAnalysisStatus]);
+  }, [currentThreadId, setTodos, setCurrentReport, setReports, setCodeLogs, setAnalysisScore, setAnalysisStatus]);
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
@@ -258,6 +264,22 @@ export function MessageInput() {
             // Load score if available (from reviewer)
           setAnalysisScore(state.final_score ?? null);
           setAnalysisStatus(state.analysis_status ?? null);
+            
+            // Load code logs from last analysis
+            setCodeLogs(state.code_logs || []);
+            
+            // Load all reports
+            const reportsList = Object.entries(state.reports || {}).map(([title, content]) => ({
+              title,
+              content: content as string,
+            }));
+            // Sort: current report first
+            const sortedReports = reportsList.sort((a, b) => {
+              if (a.title === state.report_title) return -1;
+              if (b.title === state.report_title) return 1;
+              return 0;
+            });
+            setReports(sortedReports);
             
             const fetchedMessages = await listMessages(currentThreadId);
             const chronologicalMessages = [...fetchedMessages].reverse();
