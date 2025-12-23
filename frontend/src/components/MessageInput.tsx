@@ -32,6 +32,7 @@ export function MessageInput() {
   const setTodos = useChatStore((state) => state.setTodos);
   const setCurrentReport = useChatStore((state) => state.setCurrentReport);
   const setAnalysisScore = useChatStore((state) => state.setAnalysisScore);
+  const setAnalysisStatus = useChatStore((state) => state.setAnalysisStatus);
   const apiKeys = useChatStore((state) => state.apiKeys);
   
   const [input, setInput] = useState('');
@@ -71,11 +72,8 @@ export function MessageInput() {
         }
         
         // Load score if available (from reviewer)
-        if (state.final_score !== undefined && state.final_score !== null) {
-          setAnalysisScore(state.final_score);
-        } else {
-          setAnalysisScore(null);
-        }
+        setAnalysisScore(state.final_score ?? null);
+        setAnalysisStatus(state.analysis_status ?? null);
       }).catch((err) => {
         // Ignore 404 errors when fetching thread state (new thread)
         if (err?.response?.status !== 404) {
@@ -85,14 +83,16 @@ export function MessageInput() {
         setTodos([]);
         setCurrentReport(null, null);
         setAnalysisScore(null);
+        setAnalysisStatus(null);
       });
     } else {
       // No thread selected - reset all state
       setTodos([]);
       setCurrentReport(null, null);
       setAnalysisScore(null);
+      setAnalysisStatus(null);
     }
-  }, [currentThreadId, setTodos, setCurrentReport, setAnalysisScore]);
+  }, [currentThreadId, setTodos, setCurrentReport, setAnalysisScore, setAnalysisStatus]);
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
@@ -237,9 +237,8 @@ export function MessageInput() {
             }
             
             // Load score if available (from reviewer)
-            if (state.final_score !== undefined && state.final_score !== null) {
-              setAnalysisScore(state.final_score);
-            }
+          setAnalysisScore(state.final_score ?? null);
+          setAnalysisStatus(state.analysis_status ?? null);
             
             const fetchedMessages = await listMessages(currentThreadId);
             const chronologicalMessages = [...fetchedMessages].reverse();

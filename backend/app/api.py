@@ -580,6 +580,9 @@ async def get_thread_state(
         final_score = (
             state_snapshot.values.get("final_score") if state_snapshot.values else None
         )
+        analysis_status = (
+            state_snapshot.values.get("analysis_status") if state_snapshot.values else None
+        )
         context_window = (
             cfg.context_window
             if (cfg and cfg.context_window)
@@ -598,6 +601,7 @@ async def get_thread_state(
             "report_title": last_report_title,
             "report_content": current_report_content,
             "final_score": final_score,
+            "analysis_status": analysis_status,
         }
     except Exception as e:
         # If state doesn't exist yet (new thread), return defaults
@@ -616,6 +620,7 @@ async def get_thread_state(
             "report_title": "",
             "report_content": "",
             "final_score": None,
+            "analysis_status": None,
         }
 
 
@@ -1517,8 +1522,8 @@ async def post_message_stream(
 # Resume endpoint for handling interrupts (human-in-the-loop)
 class ResumeRequest(BaseModel):
     resume_value: (
-        str | dict
-    )  # String for supervisor HITL ('accept'/'reject'), dict for other interrupts
+        dict
+    )  # dictionary of values 
 
 
 @router.post("/threads/{thread_id}/continue")
@@ -2095,9 +2100,7 @@ async def resume_thread(
 
     Uses the same graph instance (via singleton checkpointer) and config to resume execution.
 
-    Resume value format depends on the interrupt:
-    - For supervisor HITL (assign to report writer): "accept" or "reject" (string)
-    - For other interrupts (if any): {"type": "accept"} or other dict formats
+    Resume value format is a dict for all interrupts. Currently (23/12/2025) interrupt is only used in assigning to report writer.
     """
     from backend.graph.graph import make_graph
     from backend.main import get_thread_lock, _checkpointer_cm

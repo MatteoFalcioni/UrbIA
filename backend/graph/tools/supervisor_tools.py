@@ -46,11 +46,11 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
         runtime: ToolRuntime,
     ) -> Command:
 
-        decision = interrupt(
-            value=f"The agent supervisor wants to call the {agent_name} to perform the following task: {task}. Do you approve?"
+        usr_response = interrupt(
+            value=f"The agent supervisor wants to call the {agent_name} to perform the following task: *{task}*.\nDo you approve?"
         )
 
-        if decision == "accept":
+        if usr_response['decision'] == "accept":
             goto = agent_name
             tool_msg = [
                 ToolMessage(
@@ -64,13 +64,16 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
                 )
             ]
             msgs = tool_msg + task_msg
-        else:
+        elif usr_response['decision'] == 'reject':
             goto = "supervisor"
             msgs = [
                 ToolMessage(
-                    content=f"Routing to {agent_name} was rejected by the user."
+                    content=f"Routing to {agent_name} was rejected by the user.",
+                    tool_call_id=runtime.tool_call_id
                 )
             ]
+        else: 
+            raise ValueError(f"Invalid user response: {usr_response['decision']}")
 
         state = runtime.state
 

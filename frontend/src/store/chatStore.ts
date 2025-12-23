@@ -85,7 +85,9 @@ interface ChatStore {
   
   // Analysis quality score (from reviewer)
   analysisScore: number | null;
+  analysisStatus: 'pending' | 'approved' | 'rejected' | 'limit_exceeded' | 'end_flow' | null;
   setAnalysisScore: (score: number | null) => void;
+  setAnalysisStatus: (status: ChatStore['analysisStatus']) => void;
 
   // Default configs for new threads (applied when auto-creating)
   defaultConfig: { model: string | null; temperature: number | null; system_prompt: string | null; context_window: number | null };
@@ -267,7 +269,9 @@ export const useChatStore = create<ChatStore>((set) => ({
   setTodos: (todos) => set({ todos }),
   
   analysisScore: null,
+  analysisStatus: null,
   setAnalysisScore: (score) => set({ analysisScore: score }),
+  setAnalysisStatus: (status) => set({ analysisStatus: status }),
 
   defaultConfig: JSON.parse(localStorage.getItem('defaultConfig') || '{"model":null,"temperature":null,"system_prompt":null,"context_window":null}'),
   setDefaultConfig: (updates) => {

@@ -114,6 +114,7 @@ export async function getThreadState(threadId: string): Promise<{
   report_title: string;
   report_content: string;
   final_score: number | null;
+  analysis_status: 'pending' | 'approved' | 'rejected' | 'limit_exceeded' | 'end_flow' | null;
 }> {
   const res = await fetch(`${BASE_URL}/threads/${threadId}/state`);
   if (!res.ok) {
