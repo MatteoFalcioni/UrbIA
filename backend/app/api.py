@@ -577,6 +577,9 @@ async def get_thread_state(
             if state_snapshot.values
             else ""
         )
+        code_logs = (
+            state_snapshot.values.get("code_logs", []) if state_snapshot.values else []
+        )
         final_score = (
             state_snapshot.values.get("final_score") if state_snapshot.values else None
         )
@@ -601,6 +604,7 @@ async def get_thread_state(
             "report_title": last_report_title,
             "report_content": current_report_content,
             "reports": reports,
+            "code_logs": code_logs,
             "final_score": final_score,
             "analysis_status": analysis_status,
         }
@@ -621,6 +625,7 @@ async def get_thread_state(
             "report_title": "",
             "report_content": "",
             "reports": {},
+            "code_logs": [],
             "final_score": None,
             "analysis_status": None,
         }

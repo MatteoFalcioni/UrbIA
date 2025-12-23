@@ -307,13 +307,13 @@ def make_graph(
         # (2) invoke the agent
         result = await analyst_agent.ainvoke({**state, "messages": messages})
         last_msg = result["messages"][-1]
-        code_logs = result.get("code_logs", "")
+        code_logs = result.get("code_logs", [])
 
         # (3) check if code logs exceed token threshold: if so, chunk them
         # NOTE: estimates are more accurate for openai models since they leverage tiktoken.
         code_logs_str = "\n".join(
             [
-                f"```python\n{code_log['input']}\n```\nstdout: ```bash\n{code_log['stdout']}\n```\nstderr: ```bash\n{code_log['stderr']}\n```"
+                f"\n```python\n{code_log['input']}\n```\nstdout: \n```bash\n{code_log['stdout']}\n```\nstderr: \n```bash\n{code_log['stderr']}\n```"
                 for code_log in code_logs
             ]
         )
@@ -341,10 +341,13 @@ def make_graph(
         todos = result.get("todos", [])
         sources = result.get("sources", [])
 
+        print(f"***DEBUG***: code_logs len at return: {len(code_logs)}")
+
         return Command(
             update={
                 "messages": msg_update,
                 # NOTE: not resetting code logs to [] here, 'cause the supervisor does it at assignment to data analyst 
+                "code_logs" : code_logs,
                 "code_logs_chunks": code_logs_chunks,
                 "sources": sources,  # updated by analyst
                 "analysis_comments": "",  # reset analysis comments (if there were any, we used them)

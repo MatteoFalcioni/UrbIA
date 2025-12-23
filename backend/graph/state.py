@@ -10,11 +10,16 @@ def list_add_dicts(
     Used for:
         * code: running the same code twice is meaningful;
         * reports: we want to accumulate several reports over different analysis
+    
+    Added reset: if we pass an empty list, and left is not empty, it will return [].
     """
     if left is None:
         left = []
     if right is None:
         right = []
+
+    if left is not None and len(right) == 0:
+        return []
 
     return left + right
 
@@ -60,11 +65,18 @@ def status_replace(
 
 
 def int_add(left: int | None, right: int | None) -> int:
-    """Increment a counter. Used for reroute_count"""
+    """
+    Increment a counter. Used for reroute_count
+    Added reset: if value is -1 and lft is not None, reset counter to 0.
+    """
     if left is None:
         left = 0
     if right is None:
         right = 0
+
+    if left is not None and right == -1:
+        return 0
+        
     return left + right
 
 
@@ -120,11 +132,11 @@ class MyState(AgentState):
         list[str], list_replace
     ]  # list of dataset ids; NOTE: we are replacing the list of sources entirely after each analysis
     reports: Annotated[
-        dict[str, str], list_add_dicts
+        dict, list_add_dicts
     ]  # key is the title, value is the content
     last_report_title: Annotated[str, str_replace]  # title of the last report written
     code_logs: Annotated[
-        list[dict[str, str]], list_add_dicts
+        list[dict], list_add_dicts
     ]  # list of dicts (we need chronological order!), each dicts is input and output of a code block (out can be stdout or stderr or both)
     code_logs_chunks: Annotated[
         list[str], list_replace
