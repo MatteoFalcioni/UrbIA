@@ -600,6 +600,7 @@ async def get_thread_state(
             "todos": todos,
             "report_title": last_report_title,
             "report_content": current_report_content,
+            "reports": reports,
             "final_score": final_score,
             "analysis_status": analysis_status,
         }
@@ -619,6 +620,7 @@ async def get_thread_state(
             "todos": [],
             "report_title": "",
             "report_content": "",
+            "reports": {},
             "final_score": None,
             "analysis_status": None,
         }

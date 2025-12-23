@@ -77,6 +77,8 @@ interface ChatStore {
   toggleArtifactsPanel: () => void;
   artifactsPanelWidth: number;
   setArtifactsPanelWidth: (px: number) => void;
+  reports: { title: string; content: string }[];
+  setReports: (reports: { title: string; content: string }[]) => void;
   currentReport: string | null;
   currentReportTitle: string | null;
   setCurrentReport: (report: string | null, title?: string | null) => void;
@@ -262,9 +264,26 @@ export const useChatStore = create<ChatStore>((set) => ({
     localStorage.setItem('artifactsPanelWidth', String(clamped));
     set({ artifactsPanelWidth: clamped });
   },
+  reports: [],
+  setReports: (reports) => set({ reports }),
   currentReport: null,
   currentReportTitle: null,
-  setCurrentReport: (report, title) => set({ currentReport: report, currentReportTitle: title ?? null }),
+  setCurrentReport: (report, title) =>
+    set((state) => {
+      if (report && title) {
+        const filtered = state.reports.filter((r) => r.title !== title);
+        return {
+          currentReport: report,
+          currentReportTitle: title ?? null,
+          reports: [{ title, content: report }, ...filtered],
+        };
+      }
+      return {
+        currentReport: report,
+        currentReportTitle: title ?? null,
+        reports: [],
+      };
+    }),
   todos: [],
   setTodos: (todos) => set({ todos }),
   

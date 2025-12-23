@@ -31,6 +31,7 @@ export function MessageInput() {
   const setIsReviewing = useChatStore((state) => state.setIsReviewing);
   const setTodos = useChatStore((state) => state.setTodos);
   const setCurrentReport = useChatStore((state) => state.setCurrentReport);
+  const setReports = useChatStore((state) => state.setReports);
   const setAnalysisScore = useChatStore((state) => state.setAnalysisScore);
   const setAnalysisStatus = useChatStore((state) => state.setAnalysisStatus);
   const apiKeys = useChatStore((state) => state.apiKeys);
@@ -64,7 +65,23 @@ export function MessageInput() {
       getThreadState(currentThreadId).then((state) => {
         setTodos(state.todos || []);
         
-        // Load report if available
+        // Load full reports list (all reports in state)
+        const reportsMap = state.reports || {};
+        const entries = Object.entries(reportsMap).map(([title, content]) => ({
+          title,
+          content,
+        }));
+        // Put last_report_title (if any) at the top
+        let orderedReports = entries;
+        if (state.report_title) {
+          orderedReports = [
+            ...entries.filter((r) => r.title === state.report_title),
+            ...entries.filter((r) => r.title !== state.report_title),
+          ];
+        }
+        setReports(orderedReports);
+
+        // Set current report to last one if available
         if (state.report_content && state.report_title) {
           setCurrentReport(state.report_content, state.report_title);
         } else {
@@ -81,6 +98,7 @@ export function MessageInput() {
         }
         // Fallback to default
         setTodos([]);
+        setReports([]);
         setCurrentReport(null, null);
         setAnalysisScore(null);
         setAnalysisStatus(null);
@@ -88,11 +106,12 @@ export function MessageInput() {
     } else {
       // No thread selected - reset all state
       setTodos([]);
+      setReports([]);
       setCurrentReport(null, null);
       setAnalysisScore(null);
       setAnalysisStatus(null);
     }
-  }, [currentThreadId, setTodos, setCurrentReport, setAnalysisScore, setAnalysisStatus]);
+  }, [currentThreadId, setTodos, setCurrentReport, setReports, setAnalysisScore, setAnalysisStatus]);
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
