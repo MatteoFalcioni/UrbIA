@@ -2,21 +2,15 @@ from langchain.agents import AgentState
 from typing import Annotated, Literal
 
 
-def merge_dicts(
-    left: dict[str, str] | None = None, right: dict[str, str] | None = None
-) -> dict[str, str]:
-    """Merge two dictionaries. Left takes precedence over right. Used for reports."""
-    if left is None:
-        left = {}
-    if right is None:
-        right = {}
-    return {**left, **right}
-
-
-def list_add(
-    left: list[dict[str, str]] | None = None, right: list[dict[str, str]] | None = None
-) -> list[dict[str, str]]:
-    """Add a new item to a list. Used for code. No deduplication - running the same code twice is meaningful."""
+def list_add_dicts(
+    left: list[dict] | None = None, right: list[dict] | None = None
+) -> list[dict]:
+    """
+    Add a new item to a list. No deduplication.
+    Used for:
+        * code: running the same code twice is meaningful;
+        * reports: we want to accumulate several reports over different analysis
+    """
     if left is None:
         left = []
     if right is None:
@@ -25,9 +19,12 @@ def list_add(
     return left + right
 
 
-def list_replace(left: list[str] | None, right: list[str] | None | int) -> list[str]:
+def list_replace(left: list[str] | None, right: list[str] | None) -> list[str]:
     """
-    Replace list of strings entirely instead of concatenating. Used for code logs chunks and sources.
+    Replace list of strings entirely instead of concatenating. 
+    Used for:
+        * code logs chunks: these are the logs read by the agent at each run - overwrite
+        * sources: sources are the datasets used in the current analysis - overwriting the previous ones;
     """
     if left is None:
         left = []
@@ -85,27 +82,26 @@ def float_replace(left: float | None, right: float | None) -> float:
 # If we try to pass the todos update to the general state, this will fail because the middleware
 # automatically adds the state var only to the agent that has that middleware!
 
-
 class MyState(AgentState):
     """
     Custom state for the graph.
     """
 
-    # report features
+    # ---- report features ----
     sources: Annotated[
         list[str], list_replace
     ]  # list of dataset ids; NOTE: we are replace the list of sources entirely after each analysis
     reports: Annotated[
-        dict[str, str], merge_dicts
+        dict[str, str], list_add_dicts
     ]  # key is the title, value is the content
     last_report_title: Annotated[str, str_replace]  # title of the last report written
     code_logs: Annotated[
-        list[dict[str, str]], list_add
+        list[dict[str, str]], list_add_dicts
     ]  # list of dicts (we need chronological order!), each dicts is input and output of a code block (out can be stdout or stderr or both)
     code_logs_chunks: Annotated[
         list[str], list_replace
     ]  # list of strings, each string is a chunk of already ordered code logs - we first stringify code_logs correclty, then separate it in chunks (see get_code_logs_tool in report_tools.py)
-    # review features
+    # ---- review features ----
     ## analysys
     analysis_status: Annotated[
         Literal["pending", "approved", "rejected", "limit_exceeded", "end_flow"],
@@ -122,5 +118,5 @@ class MyState(AgentState):
     completeness_score: Annotated[float, float_replace]
     relevancy_score: Annotated[float, float_replace]
     final_score: Annotated[float, float_replace]
-    # todos
+    # ---- todos ----
     todos: list[dict]

@@ -447,7 +447,7 @@ def make_graph(
         return Command(
             update={
                 "messages": [HumanMessage(content=last_msg.content)],
-                "reports": result.get("reports", {}),  # Tool updated this
+                "reports": [result.get("reports", {})],  # Tool updated this
                 "last_report_title": result.get(
                     "last_report_title"
                 ),  # Tool updated this

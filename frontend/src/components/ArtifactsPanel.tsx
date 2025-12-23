@@ -2,15 +2,17 @@
  * ArtifactsPanel: Right sidebar for displaying artifacts (reports, reviews, etc.)
  */
 
-import { X, FileText } from 'lucide-react';
+import { X, FileText, ChevronDown, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChatStore } from '@/store/chatStore';
+import { useState } from 'react';
 
 export function ArtifactsPanel() {
   const togglePanel = useChatStore((state) => state.toggleArtifactsPanel);
   const currentReport = useChatStore((state) => state.currentReport);
   const currentReportTitle = useChatStore((state) => state.currentReportTitle);
+  const [isReportCollapsed, setIsReportCollapsed] = useState(false);
 
   return (
     <>
@@ -32,15 +34,37 @@ export function ArtifactsPanel() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {currentReport ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            {currentReportTitle && (
-              <h1 className="text-2xl font-bold mb-4 text-gray-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-700 pb-2">
-                {currentReportTitle}
-              </h1>
-            )}
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {currentReport}
-            </ReactMarkdown>
+          <div className="flex flex-col gap-4">
+            <div className="max-w-3xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm">
+              <button
+                onClick={() => setIsReportCollapsed((v) => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-slate-700/60 transition-colors rounded-t-xl"
+              >
+                <div className="flex items-center gap-2">
+                  {isReportCollapsed ? (
+                    <ChevronRight size={16} className="text-gray-500 dark:text-slate-400" />
+                  ) : (
+                    <ChevronDown size={16} className="text-gray-500 dark:text-slate-400" />
+                  )}
+                  <span className="text-sm font-semibold text-gray-800 dark:text-slate-100">
+                    {currentReportTitle || 'Report'}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-slate-400">
+                  {isReportCollapsed ? 'Show content' : 'Hide content'}
+                </span>
+              </button>
+
+              {!isReportCollapsed && (
+                <div className="px-5 pb-5">
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {currentReport}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-slate-400">

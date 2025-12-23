@@ -4,6 +4,10 @@ from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command, interrupt
 
 
+# === Handoff Tools ===
+# NOTE: these are structured with graph.PARENT because we do not have a supervisor node right now.
+# That means that the subagents are considered by langgraph as **subgraphs** and therefore we need Command.PARENT in the handoff.
+
 # helper function to create handoff tool
 def create_handoff_tool(
     *, agent_name: str, description: str | None = None
@@ -112,3 +116,6 @@ assign_to_report_writer = create_handoff_tool_HITL(
     agent_name="report_writer",
     description="Assign task to the report writer agent.",
 )
+
+# === Show code tool ===
+# Just a tool to show to the user the code executed by the analyst 
