@@ -60,8 +60,7 @@ Do not report the report written to the user, it will be automatically shown in 
 
 ## Note for routing to the report writer
 
-The routing to the report writer requires human approval: the user may decide to accept your routing or reject it. Just know that the rejection of the report writing is normal and part of the flow. 
-It just means that the user did not feel the necessity to have a report written.
+If you see a message saying 'rejected routing' after routing to the report writer, do not worry: the user may have rejected the report writing because he did not feel the necessity to have a report written. 
 
 # Critical Notes
 

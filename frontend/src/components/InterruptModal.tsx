@@ -20,7 +20,10 @@ export function InterruptModal({ interruptData, onResume, onCancel }: InterruptM
       typeof interruptData === 'object' &&
       interruptData.type === 'handoff_request' &&
       interruptData.agent === 'report_writer') ||
-    (typeof interruptData === 'string' && interruptData.includes('write a report'));
+    (typeof interruptData === 'string' && 
+      (interruptData.includes('write a report') || 
+       interruptData.includes('report_writer') ||
+       interruptData.toLowerCase().includes('do you approve')));
 
   const approvalMessage =
     typeof interruptData === 'string'

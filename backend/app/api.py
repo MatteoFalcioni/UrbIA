@@ -2179,6 +2179,9 @@ async def resume_thread(
                 # Generate a unique message_id for this resume operation
                 resume_message_id = str(uuid_module.uuid4())
 
+                # Log resume value for debugging
+                logging.info(f"[RESUME] Thread {thread_id} - Resume value type: {type(payload.resume_value)}, value: {payload.resume_value}")
+
                 # Resume with Command(resume=resume_value) using SAME graph and config
                 async for event in graph.astream_events(
                     Command(resume=payload.resume_value), config, version="v2"

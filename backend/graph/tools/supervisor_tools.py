@@ -50,6 +50,16 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
             value=f"The agent supervisor wants to call the {agent_name} to perform the following task: *{task}*.\nDo you approve?"
         )
 
+        # Handle case where usr_response might be None or not properly structured
+        if usr_response is None:
+            raise ValueError("Resume value is None - user might have cancelled the interrupt")
+        
+        if not isinstance(usr_response, dict):
+            raise ValueError(f"Resume value must be a dict, got {type(usr_response)}: {usr_response}")
+        
+        if 'decision' not in usr_response:
+            raise ValueError(f"Resume value missing 'decision' key. Got: {usr_response}")
+
         if usr_response['decision'] == "accept":
             goto = agent_name
             tool_msg = [
