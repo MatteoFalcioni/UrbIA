@@ -142,7 +142,7 @@ def create_handoff_to_data_analyst():
         """
 
         tool_msg = ToolMessage(
-            content=f"Successfully transferred to data analyst",
+            content="Successfully transferred to data analyst",
             tool_call_id=runtime.tool_call_id,
         )
         task_msg = HumanMessage(
