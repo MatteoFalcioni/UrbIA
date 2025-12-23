@@ -22,6 +22,7 @@ export function ChatPage() {
   const artifactsPanelWidth = useChatStore((s) => s.artifactsPanelWidth);
   const setArtifactsPanelWidth = useChatStore((s) => s.setArtifactsPanelWidth);
   const analysisScore = useChatStore((s) => s.analysisScore);
+  const analysisStatus = useChatStore((s) => s.analysisStatus);
   
   const isResizing = useRef(false);
   const startWidth = useRef(0);
@@ -117,7 +118,7 @@ export function ChatPage() {
         <div className="flex items-center justify-between gap-2 p-2 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
           {/* Left side: Score bar */}
           <div className="flex-1 min-w-0">
-            <ScoreBar score={analysisScore} />
+            <ScoreBar score={analysisScore} status={analysisStatus} />
           </div>
           
           {/* Right side: Controls */}

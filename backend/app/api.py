@@ -577,8 +577,14 @@ async def get_thread_state(
             if state_snapshot.values
             else ""
         )
+        code_logs = (
+            state_snapshot.values.get("code_logs", []) if state_snapshot.values else []
+        )
         final_score = (
             state_snapshot.values.get("final_score") if state_snapshot.values else None
+        )
+        analysis_status = (
+            state_snapshot.values.get("analysis_status") if state_snapshot.values else None
         )
         context_window = (
             cfg.context_window
@@ -597,7 +603,10 @@ async def get_thread_state(
             "todos": todos,
             "report_title": last_report_title,
             "report_content": current_report_content,
+            "reports": reports,
+            "code_logs": code_logs,
             "final_score": final_score,
+            "analysis_status": analysis_status,
         }
     except Exception as e:
         # If state doesn't exist yet (new thread), return defaults
@@ -615,7 +624,10 @@ async def get_thread_state(
             "todos": [],
             "report_title": "",
             "report_content": "",
+            "reports": {},
+            "code_logs": [],
             "final_score": None,
+            "analysis_status": None,
         }
 
 
@@ -1517,8 +1529,8 @@ async def post_message_stream(
 # Resume endpoint for handling interrupts (human-in-the-loop)
 class ResumeRequest(BaseModel):
     resume_value: (
-        str | dict
-    )  # String for supervisor HITL ('accept'/'reject'), dict for other interrupts
+        dict
+    )  # dictionary of values 
 
 
 @router.post("/threads/{thread_id}/continue")
@@ -2095,9 +2107,7 @@ async def resume_thread(
 
     Uses the same graph instance (via singleton checkpointer) and config to resume execution.
 
-    Resume value format depends on the interrupt:
-    - For supervisor HITL (assign to report writer): "accept" or "reject" (string)
-    - For other interrupts (if any): {"type": "accept"} or other dict formats
+    Resume value format is a dict for all interrupts. Currently (23/12/2025) interrupt is only used in assigning to report writer.
     """
     from backend.graph.graph import make_graph
     from backend.main import get_thread_lock, _checkpointer_cm
@@ -2175,6 +2185,9 @@ async def resume_thread(
 
                 # Generate a unique message_id for this resume operation
                 resume_message_id = str(uuid_module.uuid4())
+
+                # Log resume value for debugging
+                logging.info(f"[RESUME] Thread {thread_id} - Resume value type: {type(payload.resume_value)}, value: {payload.resume_value}")
 
                 # Resume with Command(resume=resume_value) using SAME graph and config
                 async for event in graph.astream_events(

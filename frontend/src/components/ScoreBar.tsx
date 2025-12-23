@@ -5,11 +5,12 @@
 
 interface ScoreBarProps {
   score: number | null;  // Score from 0 to 1, or null if not available
+  status: 'pending' | 'approved' | 'rejected' | 'limit_exceeded' | 'end_flow' | null;
 }
 
-export function ScoreBar({ score }: ScoreBarProps) {
-  // Don't render if no score available
-  if (score === null || score === undefined) {
+export function ScoreBar({ score, status }: ScoreBarProps) {
+  // Only render when review is approved; allow 0% as valid score
+  if (status !== 'approved' || score === null || score === undefined) {
     return null;
   }
 

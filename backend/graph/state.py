@@ -2,32 +2,34 @@ from langchain.agents import AgentState
 from typing import Annotated, Literal
 
 
-def merge_dicts(
-    left: dict[str, str] | None = None, right: dict[str, str] | None = None
-) -> dict[str, str]:
-    """Merge two dictionaries. Left takes precedence over right. Used for reports."""
-    if left is None:
-        left = {}
-    if right is None:
-        right = {}
-    return {**left, **right}
-
-
-def list_add(
-    left: list[dict[str, str]] | None = None, right: list[dict[str, str]] | None = None
-) -> list[dict[str, str]]:
-    """Add a new item to a list. Used for code. No deduplication - running the same code twice is meaningful."""
+def list_add_dicts(
+    left: list[dict] | None = None, right: list[dict] | None = None
+) -> list[dict]:
+    """
+    Add a new item to a list. No deduplication.
+    Used for:
+        * code: running the same code twice is meaningful;
+        * reports: we want to accumulate several reports over different analysis
+    
+    Added reset: if we pass an empty list, and left is not empty, it will return [].
+    """
     if left is None:
         left = []
     if right is None:
         right = []
 
+    if left is not None and len(right) == 0:
+        return []
+
     return left + right
 
 
-def list_replace(left: list[str] | None, right: list[str] | None | int) -> list[str]:
+def list_replace(left: list[str] | None, right: list[str] | None) -> list[str]:
     """
-    Replace list of strings entirely instead of concatenating. Used for code logs chunks and sources.
+    Replace list of strings entirely instead of concatenating. 
+    Used for:
+        * code logs chunks: these are the logs read by the agent at each run - overwrite
+        * sources: sources are the datasets used in the current analysis - overwriting the previous ones is needed;
     """
     if left is None:
         left = []
@@ -63,11 +65,18 @@ def status_replace(
 
 
 def int_add(left: int | None, right: int | None) -> int:
-    """Increment a counter. Used for reroute_count"""
+    """
+    Increment a counter. Used for reroute_count
+    Added reset: if value is -1 and lft is not None, reset counter to 0.
+    """
     if left is None:
         left = 0
     if right is None:
         right = 0
+
+    if left is not None and right == -1:
+        return 0
+        
     return left + right
 
 
@@ -85,27 +94,54 @@ def float_replace(left: float | None, right: float | None) -> float:
 # If we try to pass the todos update to the general state, this will fail because the middleware
 # automatically adds the state var only to the agent that has that middleware!
 
-
 class MyState(AgentState):
     """
-    Custom state for the graph.
+    Custom state for the graph. Inherits from AgentState -> automatically contains messages.
+
+    Additional state variables:
+        * sources (`list[str]`): 
+            list of dataset ids used in the analysis;
+        * reports (`dict[str, str]`): 
+            dict of reports written by the report writer agent. 
+            They accumulate over different analyses;
+        * last_report_title (`str`): 
+            title of the last report written;
+        * code_logs (`list[dict[str, str]]`): 
+            list of dicts containing input code and output+err logs;
+        * code_logs_chunks (`list[str]`): 
+            list of strings, each string is a chunk of already ordered code logs. 
+            Needed for better code reading for the agents;
+        * analysis_status (`Literal["pending", "approved", "rejected", "limit_exceeded", "end_flow"]`): 
+            status of the analysis. Can be: pending, approved, rejected, limit_exceeded, end_flow;
+        * analysis_comments (`str`): 
+            comments for the analyst to improve the analysis;
+        * reroute_count (`int`): 
+            counter of how many times the analysis was re-routed to analyst with comments;
+        * completeness_score (`float`): 
+            score of the completeness of the analysis;
+        * relevancy_score (`float`): 
+            score of the relevancy of the analysis;
+        * final_score (`float`): 
+            final score of the analysis;
+        * todos (`list[dict]`): 
+            list of todos for the analyst to perform. 
     """
 
-    # report features
+    # ---- report features ----
     sources: Annotated[
         list[str], list_replace
-    ]  # list of dataset ids; NOTE: we are replace the list of sources entirely after each analysis
+    ]  # list of dataset ids; NOTE: we are replacing the list of sources entirely after each analysis
     reports: Annotated[
-        dict[str, str], merge_dicts
+        dict, list_add_dicts
     ]  # key is the title, value is the content
     last_report_title: Annotated[str, str_replace]  # title of the last report written
     code_logs: Annotated[
-        list[dict[str, str]], list_add
+        list[dict], list_add_dicts
     ]  # list of dicts (we need chronological order!), each dicts is input and output of a code block (out can be stdout or stderr or both)
     code_logs_chunks: Annotated[
         list[str], list_replace
     ]  # list of strings, each string is a chunk of already ordered code logs - we first stringify code_logs correclty, then separate it in chunks (see get_code_logs_tool in report_tools.py)
-    # review features
+    # ---- review features ----
     ## analysys
     analysis_status: Annotated[
         Literal["pending", "approved", "rejected", "limit_exceeded", "end_flow"],
@@ -122,5 +158,5 @@ class MyState(AgentState):
     completeness_score: Annotated[float, float_replace]
     relevancy_score: Annotated[float, float_replace]
     final_score: Annotated[float, float_replace]
-    # todos
+    # ---- todos ----
     todos: list[dict]

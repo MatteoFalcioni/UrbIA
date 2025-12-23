@@ -162,7 +162,7 @@ export function useSSE(options: UseSSEOptions) {
    * @param resumeValue - Resume data (string like 'accept'/'reject' for supervisor HITL, or object like {type: 'accept'} for other interrupts)
    */
   const resumeThread = useCallback(
-    async (threadId: string, resumeValue: string | Record<string, any>) => {
+    async (threadId: string, resumeValue: Record<string, any>) => {
       // Abort any existing stream
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();

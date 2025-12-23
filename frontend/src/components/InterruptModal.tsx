@@ -7,7 +7,7 @@ import { useState } from 'react';
 
 interface InterruptModalProps {
   interruptData: any;
-  onResume: (resumeValue: string | Record<string, any>) => void;
+  onResume: (resumeValue: Record<string, any>) => void;
   onCancel: () => void;
 }
 
@@ -15,9 +15,21 @@ export function InterruptModal({ interruptData, onResume, onCancel }: InterruptM
   const [editInstructions, setEditInstructions] = useState('');
   
   // Detect which interrupt this is based on the data structure
-  const isWriteReportApproval = interruptData && 
-    typeof interruptData === 'string' && 
-    interruptData.includes('write a report');
+  const isWriteReportApproval =
+    (interruptData &&
+      typeof interruptData === 'object' &&
+      interruptData.type === 'handoff_request' &&
+      interruptData.agent === 'report_writer') ||
+    (typeof interruptData === 'string' && 
+      (interruptData.includes('write a report') || 
+       interruptData.includes('report_writer') ||
+       interruptData.toLowerCase().includes('do you approve')));
+
+  const approvalMessage =
+    typeof interruptData === 'string'
+      ? interruptData
+      : interruptData?.message ||
+        'The supervisor wants to hand off to the report writer. Do you approve?';
   
   const isReportReview = interruptData?.report && interruptData?.question;
   
@@ -35,7 +47,7 @@ export function InterruptModal({ interruptData, onResume, onCancel }: InterruptM
             </div>
             <div className="p-6 flex-1 overflow-y-auto">
               <p className="text-gray-700 dark:text-slate-300 mb-4">
-                {interruptData}
+                  {approvalMessage}
               </p>
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 text-sm text-amber-800 dark:text-amber-200">
                 <strong>Note:</strong> Once approved, the assistant will generate a comprehensive report based on the analysis performed.
@@ -43,19 +55,19 @@ export function InterruptModal({ interruptData, onResume, onCancel }: InterruptM
             </div>
             <div className="p-6 border-t border-gray-200 dark:border-slate-700 flex gap-3 justify-end">
               <button
-                onClick={onCancel}
+                  onClick={onCancel}
                 className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => onResume('reject')}
+                  onClick={() => onResume({ decision: 'reject' })}
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
               >
                 Reject
               </button>
               <button
-                onClick={() => onResume('accept')}
+                  onClick={() => onResume({ decision: 'accept' })}
                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
               >
                 Approve

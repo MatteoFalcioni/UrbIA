@@ -109,6 +109,7 @@ async def approve_analysis_tool(runtime: ToolRuntime) -> Command:
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
+            "reroute_count" : -1  # resets to 0
         }
     )
 
@@ -152,12 +153,12 @@ async def update_completeness_score(
     state = runtime.state
     num_todos = len(state.get("todos", []))
 
-    if num_todos == 0:
+    if num_todos == 0:  # no update to score means default value, which is 0 
         return Command(
             update={
                 "messages": [
                     ToolMessage(
-                        content="todo list was empty: completeness score cannot be computed.",
+                        content="todo list was empty: completeness score cannot be computed and therefore willbe penalized with a score = 0",
                         tool_call_id=runtime.tool_call_id,
                     )
                 ]
@@ -197,7 +198,7 @@ async def update_relevancy_score(
             update={
                 "messages": [
                     ToolMessage(
-                        content="source list was empty: relevancy score cannot be computed.",
+                        content="source list was empty: relevancy score cannot be computed, and will be penalized with a score = 0",
                         tool_call_id=runtime.tool_call_id,
                     )
                 ]
