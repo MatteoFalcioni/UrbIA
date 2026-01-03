@@ -26,9 +26,6 @@ s3fs
 # Modal
 modal
 
-# Monitoring
-psutil
-
 # ===== Data / analytics =====
 googlemaps
 geopandas
