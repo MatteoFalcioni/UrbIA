@@ -284,20 +284,14 @@ def make_graph(
     ) -> Command[Literal["supervisor"]]:
         """
         Main node of the graph.
-        Workflow:
-            - (1) checks if there are comments made from the reviewer and adds them to messages
-            - (2) invokes the analyst agent
-            - (3) if code_logs (produced by analysit) exceed 5000 tokens they get chunked into smaller parts
-            - (4) routes back to supervisor once it finishes the analysis
         """
+        print("[GRAPH] Entering analyst_agent_node")
 
         messages = state["messages"]
 
-        # (1) if there are any comments made from the reviewer, use them in the analysis invocation (if there are, it means analysis was rejected)
+        # (1) if there are any comments made from the reviewer, use them in the analysis invocation
         analysis_comments = state.get("analysis_comments", "")
-        if (
-            analysis_comments
-        ):  # this condition does not activate if analysis_comments = ""
+        if analysis_comments:
             messages += [
                 HumanMessage(
                     content=f"The reviewer reviewed your analysis and rejected it; improve your previous analysis following the following comments that the reviewer made: {analysis_comments}"
@@ -305,7 +299,14 @@ def make_graph(
             ]
 
         # (2) invoke the agent
-        result = await analyst_agent.ainvoke({**state, "messages": messages})
+        print("[GRAPH] Invoking analyst_agent...")
+        try:
+            result = await analyst_agent.ainvoke({**state, "messages": messages})
+            print("[GRAPH] analyst_agent returned successfully")
+        except Exception as e:
+            print(f"[GRAPH] analyst_agent FAILED: {e}")
+            raise
+
         last_msg = result["messages"][-1]
         code_logs = result.get("code_logs", [])
 
@@ -461,8 +462,19 @@ def make_graph(
 
     builder = StateGraph(MyState)
 
+    async def supervisor_node(state: MyState):
+        print("[GRAPH] Entering supervisor_node")
+        try:
+            result = await supervisor_agent.ainvoke(state)
+            # Supervisor returns a Command, so we just return it
+            print("[GRAPH] Supervisor completed step")
+            return result
+        except Exception as e:
+            print(f"[GRAPH] Supervisor FAILED: {e}")
+            raise
+
     builder.add_node(
-        "supervisor", supervisor_agent
+        "supervisor", supervisor_node
     )  # , destinations=("data_analyst", "report_writer", "reviewer", END)
     builder.add_node("data_analyst", analyst_agent_node)
     builder.add_node("report_writer", write_report_node)
