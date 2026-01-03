@@ -13,9 +13,6 @@ from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
 
-from backend.opendata_api.helpers import (
-    get_dataset_bytes,
-)  # change heavy detection this to be more reliable
 from backend.opendata_api.init_client import client
 from backend.modal_runtime.executor import SandboxExecutor
 from backend.modal_runtime.session import session_base_dir
@@ -179,6 +176,7 @@ print(json.dumps(result))
     # If not, load from S3 or API
     try:
         import boto3
+        import tempfile
         from botocore.client import Config
 
         region = os.getenv("AWS_REGION", "eu-central-1")
@@ -201,54 +199,70 @@ print(json.dumps(result))
         # Try S3 first (input/datasets/{dataset_id}.parquet)
         data_bytes = None
         s3_key = f"input/datasets/{dataset_id}.parquet"
+        
+        # Create a temp file to store the dataset locally (avoids RAM spikes)
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            temp_path = tmp_file.name
 
         try:
-            s3.head_object(Bucket=input_bucket, Key=s3_key)
-            data_bytes = s3.get_object(Bucket=input_bucket, Key=s3_key)["Body"].read()
-        except Exception:
-            # Not in S3, try fetching from API
+            # Check S3
             try:
-                data_bytes = await get_dataset_bytes(
-                    client=client, dataset_id=dataset_id
-                )
+                s3.head_object(Bucket=input_bucket, Key=s3_key)
+                # Download from S3 to file
+                s3.download_file(input_bucket, s3_key, temp_path)
+                with open(temp_path, "rb") as f:
+                    data_bytes = f.read()
+            except Exception:
+                # Not in S3, download from API to file
+                try:
+                    await client.export_to_file(
+                        dataset_id=dataset_id, path=temp_path
+                    )
+                    
+                    # Read bytes for sandbox injection
+                    # NOTE: This still loads into RAM for sandbox injection, but avoids OOM during download
+                    with open(temp_path, "rb") as f:
+                        data_bytes = f.read()
 
-                if not data_bytes:
-                    return Command(
+                    if not data_bytes:
+                         return Command(
+                            update={
+                                "messages": [
+                                    ToolMessage(
+                                        content=f"Error: Dataset '{dataset_id}' returned empty data.",
+                                        tool_call_id=runtime.tool_call_id,
+                                    )
+                                ]
+                            }
+                        )
+                except Exception as api_err:
+                     return Command(
                         update={
                             "messages": [
                                 ToolMessage(
-                                    content=f"Error: Dataset '{dataset_id}' not found or returned empty data. Please check the dataset ID.",
+                                    content=f"Error: Failed to fetch dataset '{dataset_id}' from API. Error: {str(api_err)}",
                                     tool_call_id=runtime.tool_call_id,
                                 )
                             ]
                         }
                     )
 
-            except Exception as api_err:
-                return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(
-                                content=f"Error: Failed to fetch dataset '{dataset_id}' from API. It may not exist or be unavailable. Error: {str(api_err)}",
-                                tool_call_id=runtime.tool_call_id,
-                            )
-                        ]
-                    }
-                )
-
-            # after downloading from API, upload to S3 right away
-            try:
-                s3.put_object(
-                    Bucket=input_bucket,
-                    Key=s3_key,
-                    Body=data_bytes,
-                    ContentType="application/parquet",
-                )
-            except Exception as upload_err:
-                # Log but don't fail - only upload to S3 failed, process can continue
-                print(
-                    f"Warning: Failed to upload dataset to S3: {upload_err}. Dataset is being loaded into workspace anyway..."
-                )
+                # After downloading from API, upload to S3 from file
+                try:
+                    s3.upload_file(
+                        Filename=temp_path,
+                        Bucket=input_bucket,
+                        Key=s3_key,
+                        ExtraArgs={"ContentType": "application/parquet"},
+                    )
+                except Exception as upload_err:
+                    print(
+                        f"Warning: Failed to upload dataset to S3: {upload_err}. Dataset is being loaded into workspace anyway..."
+                    )
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
 
         # Write dataset directly to sandbox using executor.execute()
         data_b64 = base64.b64encode(data_bytes).decode("utf-8")
