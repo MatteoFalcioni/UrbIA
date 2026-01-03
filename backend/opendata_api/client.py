@@ -230,36 +230,32 @@ class BolognaOpenData:
                 return r.json()
             raise
 
-    async def export(self, dataset_id: str, fmt: str = "parquet") -> bytes:
+    async def export_to_file(self, dataset_id: str, path: str, fmt: str = "parquet") -> None:
         """
-        Download the full dataset in one file (no row limit).
+        Download the full dataset directly to a file using streaming.
+        This avoids loading the entire dataset into memory.
 
         Args:
             dataset_id: dataset id string.
-            fmt: format string. Typical values: "csv", "json",
-                 "geojson", "parquet".
-                 Default is "parquet".
-
-        Returns:
-            Raw bytes of the file. Caller should save to disk.
-
-        Example:
-            blob = await client.export("numero-di-residenti-per-quartiere", "csv")
-            with open("residenti.csv", "wb") as f:
-                f.write(blob)
+            path: file path to save to.
+            fmt: format string (default "parquet").
         """
         await self._ensure_client_ready()
+        
+        async def _stream_download():
+            async with self._client.stream(
+                "GET", f"/catalog/datasets/{dataset_id}/exports/{fmt}"
+            ) as response:
+                response.raise_for_status()
+                with open(path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        f.write(chunk)
+
         try:
-            # Use larger chunk size for faster downloads
-            r = await self._client.get(f"/catalog/datasets/{dataset_id}/exports/{fmt}")
-            r.raise_for_status()
-            return r.content
+            await _stream_download()
         except (RuntimeError, ConnectionError) as e:
             if "closed" in str(e).lower():
                 await self._ensure_client_ready()
-                r = await self._client.get(
-                    f"/catalog/datasets/{dataset_id}/exports/{fmt}"
-                )
-                r.raise_for_status()
-                return r.content
-            raise
+                await _stream_download()
+            else:
+                raise
