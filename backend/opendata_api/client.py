@@ -6,12 +6,12 @@ BASE_URL = "https://opendata.comune.bologna.it/api/explore/v2.1"
 
 
 class BolognaOpenData:
-    def __init__(self, timeout: float = 600.0):
+    def __init__(self, timeout: float = 30.0):
         """
         Initialize the async HTTP client with connection pooling.
 
         Args:
-            timeout: request timeout in seconds (default 600.0).
+            timeout: request timeout in seconds (default 30.0).
         """
         # Configure connection pooling for efficiency
         self._limits = httpx.Limits(
@@ -69,6 +69,11 @@ class BolognaOpenData:
                 timeout=self._timeout_config,
                 limits=self._limits,
                 http2=True,  # Enable HTTP/2 for better performance
+                follow_redirects=True,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; LGUrbanBot/1.0; +https://github.com/matteofalcioni/LG-Urban)",
+                    "Accept": "application/json, application/parquet, */*",
+                },
             )
             self._closed = False
 
