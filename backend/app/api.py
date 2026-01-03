@@ -7,6 +7,7 @@ from uuid import UUID
 import logging
 import uuid
 import json
+import time
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -2734,26 +2735,43 @@ class APIKeysResponse(BaseModel):
 @router.get("/users/{user_id}/api-keys", response_model=APIKeysResponse)
 async def get_user_api_keys(user_id: str, session: AsyncSession = Depends(get_session)):
     """Get user's API keys (masked for security)."""
-    result = await session.execute(
-        select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
-    )
-    user_keys = result.scalar_one_or_none()
+    start_time = time.time()
+    logging.info(f"[API-KEYS] Starting fetch for user {user_id}")
+    
+    try:
+        result = await session.execute(
+            select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
+        )
+        query_time = time.time() - start_time
+        logging.info(f"[API-KEYS] Query completed in {query_time:.3f}s for user {user_id}")
+        
+        user_keys = result.scalar_one_or_none()
 
-    if not user_keys:
-        return APIKeysResponse()
+        if not user_keys:
+            total_time = time.time() - start_time
+            logging.info(f"[API-KEYS] No keys found. Total time: {total_time:.3f}s for user {user_id}")
+            return APIKeysResponse()
 
-    return APIKeysResponse(
-        openai_key=(
-            mask_api_key(decrypt_api_key(user_keys.openai_key))
-            if user_keys.openai_key
-            else None
-        ),
-        anthropic_key=(
-            mask_api_key(decrypt_api_key(user_keys.anthropic_key))
-            if user_keys.anthropic_key
-            else None
-        ),
-    )
+        response = APIKeysResponse(
+            openai_key=(
+                mask_api_key(decrypt_api_key(user_keys.openai_key))
+                if user_keys.openai_key
+                else None
+            ),
+            anthropic_key=(
+                mask_api_key(decrypt_api_key(user_keys.anthropic_key))
+                if user_keys.anthropic_key
+                else None
+            ),
+        )
+        
+        total_time = time.time() - start_time
+        logging.info(f"[API-KEYS] Success. Total time: {total_time:.3f}s for user {user_id}")
+        return response
+    except Exception as e:
+        error_time = time.time() - start_time
+        logging.error(f"[API-KEYS] Error after {error_time:.3f}s for user {user_id}: {str(e)}")
+        raise
 
 
 @router.post("/users/{user_id}/api-keys", response_model=APIKeysResponse)
@@ -2807,21 +2825,38 @@ async def get_user_api_keys_raw(
     user_id: str, session: AsyncSession = Depends(get_session)
 ):
     """Get user's API keys in raw format (for internal use by LLM services)."""
-    result = await session.execute(
-        select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
-    )
-    user_keys = result.scalar_one_or_none()
+    start_time = time.time()
+    logging.info(f"[API-KEYS-RAW] Starting fetch for user {user_id}")
+    
+    try:
+        result = await session.execute(
+            select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
+        )
+        query_time = time.time() - start_time
+        logging.info(f"[API-KEYS-RAW] Query completed in {query_time:.3f}s for user {user_id}")
+        
+        user_keys = result.scalar_one_or_none()
 
-    if not user_keys:
-        return {"openai_key": None, "anthropic_key": None}
+        if not user_keys:
+            total_time = time.time() - start_time
+            logging.info(f"[API-KEYS-RAW] No keys found. Total time: {total_time:.3f}s for user {user_id}")
+            return {"openai_key": None, "anthropic_key": None}
 
-    return {
-        "openai_key": (
-            decrypt_api_key(user_keys.openai_key) if user_keys.openai_key else None
-        ),
-        "anthropic_key": (
-            decrypt_api_key(user_keys.anthropic_key)
-            if user_keys.anthropic_key
-            else None
-        ),
-    }
+        response = {
+            "openai_key": (
+                decrypt_api_key(user_keys.openai_key) if user_keys.openai_key else None
+            ),
+            "anthropic_key": (
+                decrypt_api_key(user_keys.anthropic_key)
+                if user_keys.anthropic_key
+                else None
+            ),
+        }
+        
+        total_time = time.time() - start_time
+        logging.info(f"[API-KEYS-RAW] Success. Total time: {total_time:.3f}s for user {user_id}")
+        return response
+    except Exception as e:
+        error_time = time.time() - start_time
+        logging.error(f"[API-KEYS-RAW] Error after {error_time:.3f}s for user {user_id}: {str(e)}")
+        raise
