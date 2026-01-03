@@ -7,6 +7,29 @@ import type { Thread, Message, ThreadConfig, Todo } from '@/types/api';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+/**
+ * Fetch with timeout to prevent hanging requests
+ */
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+    throw error;
+  }
+}
+
 // ===== Threads =====
 
 export async function createThread(userId: string, title?: string): Promise<Thread> {
@@ -136,19 +159,23 @@ export interface APIKeys {
 }
 
 export async function getUserApiKeys(userId: string): Promise<APIKeys> {
-  const res = await fetch(`${BASE_URL}/users/${userId}/api-keys`);
+  const res = await fetchWithTimeout(`${BASE_URL}/users/${userId}/api-keys`, {}, 10000);
   if (!res.ok) throw new Error(`Failed to get API keys: ${res.statusText}`);
   return res.json();
 }
 
 export async function saveUserApiKeys(userId: string, keys: APIKeys): Promise<APIKeys> {
-  const res = await fetch(`${BASE_URL}/users/${userId}/api-keys`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+  const res = await fetchWithTimeout(
+    `${BASE_URL}/users/${userId}/api-keys`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(keys),
     },
-    body: JSON.stringify(keys),
-  });
+    10000
+  );
   if (!res.ok) throw new Error(`Failed to save API keys: ${res.statusText}`);
   return res.json();
 }

@@ -1,44 +1,36 @@
 /**
  * ApiKeyWarning: Modal that warns users if they haven't set up API keys yet.
- * Checks for OpenAI or Anthropic keys and shows a blocking modal if none exist.
+ * Reads from the store (populated by useApiKeysLoader) instead of making a separate API call.
  */
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '@/store/chatStore';
-import { getUserApiKeys } from '@/utils/api';
 
 export function ApiKeyWarning() {
   const [showWarning, setShowWarning] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const userId = useChatStore((state) => state.userId);
+  const apiKeys = useChatStore((state) => state.apiKeys);
   const navigate = useNavigate();
 
   useEffect(() => {
-    async function checkApiKeys() {
+    // Wait a bit for useApiKeysLoader to populate the store
+    const timer = setTimeout(() => {
       if (!userId) {
         setIsChecking(false);
         return;
       }
       
-      try {
-        const keys = await getUserApiKeys(userId);
-        const hasKeys = keys.openai_key || keys.anthropic_key;
-        
-        // Show warning if no keys
-        setShowWarning(!hasKeys);
-      } catch (err) {
-        console.error('Failed to check API keys:', err);
-        // Show warning on error (safer - ensures users add keys)
-        setShowWarning(true);
-      } finally {
-        setIsChecking(false);
-      }
-    }
+      // Check if any keys exist in the store
+      const hasKeys = apiKeys.openai || apiKeys.anthropic;
+      setShowWarning(!hasKeys);
+      setIsChecking(false);
+    }, 500); // Small delay to let the loader hook finish
 
-    checkApiKeys();
-  }, [userId]);
+    return () => clearTimeout(timer);
+  }, [userId, apiKeys]);
 
   // Don't show anything while checking or if no warning needed
   if (isChecking || !showWarning) return null;
