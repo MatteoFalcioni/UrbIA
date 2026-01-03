@@ -124,6 +124,8 @@ async def load_dataset_tool(
     session_id = str(thread_id)
     executor = get_or_create_executor(session_id)
 
+    print(f"Checking if dataset {dataset_id} is already loaded...")
+
     # First, check if the dataset was already loaded in the workspace
     check_code = f"""
 import os
@@ -169,29 +171,19 @@ print(json.dumps(result))
                     ]
                 }
             )
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError) as e:
         # If check fails, continue to load anyway
-        pass
+        print(f"Check failed for dataset {dataset_id}; error: {e}. Continuing to load...")
+        raise e
 
     # If not, load from S3 or API
     try:
         import boto3
         import tempfile
         import time
-        import psutil
-        import logging
         from botocore.client import Config
-        
-        # Setup logging
-        logger = logging.getLogger("load_dataset")
-        process = psutil.Process(os.getpid())
-        
-        def log_step(step: str):
-            mem_mb = process.memory_info().rss / 1024 / 1024
-            print(f"[LOAD_DATASET] {step} | RAM: {mem_mb:.2f} MB")
-            logger.info(f"{step} | RAM: {mem_mb:.2f} MB")
 
-        log_step(f"Starting load for {dataset_id}")
+        print(f"[LOAD_DATASET] Starting load for {dataset_id}")
 
         region = os.getenv("AWS_REGION", "eu-central-1")
         s3 = boto3.client(
@@ -217,39 +209,39 @@ print(json.dumps(result))
         # Create a temp file to store the dataset locally (avoids RAM spikes)
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             temp_path = tmp_file.name
-            log_step(f"Created temp file: {temp_path}")
+            print(f"Created temp file: {temp_path}")
 
         try:
             # Check S3
             try:
-                log_step("Checking S3...")
+                print("Checking S3...")
                 s3.head_object(Bucket=input_bucket, Key=s3_key)
                 
                 # Download from S3 to file
-                log_step("Downloading from S3 to file...")
+                print("Downloading from S3 to file...")
                 s3.download_file(input_bucket, s3_key, temp_path)
-                log_step("S3 download complete")
+                print("S3 download complete")
                 
                 with open(temp_path, "rb") as f:
                     data_bytes = f.read()
-                log_step("Read bytes from file into RAM")
+                print("Read bytes from file into RAM")
                 
             except Exception:
                 # Not in S3, download from API to file
                 try:
-                    log_step("Not in S3. Downloading from API to file...")
+                    print("Not in S3. Downloading from API to file...")
                     start_dl = time.time()
                     await client.export_to_file(
                         dataset_id=dataset_id, path=temp_path
                     )
                     dl_time = time.time() - start_dl
-                    log_step(f"API Download complete in {dl_time:.2f}s")
+                    print(f"API Download complete in {dl_time:.2f}s")
                     
                     # Read bytes for sandbox injection
-                    log_step("Reading file into RAM...")
+                    print("Reading file into RAM...")
                     with open(temp_path, "rb") as f:
                         data_bytes = f.read()
-                    log_step(f"Read {len(data_bytes) / 1024 / 1024:.2f} MB into RAM")
+                    print(f"Read {len(data_bytes) / 1024 / 1024:.2f} MB into RAM")
 
                     if not data_bytes:
                          return Command(
@@ -263,7 +255,7 @@ print(json.dumps(result))
                             }
                         )
                 except Exception as api_err:
-                     log_step(f"API Error: {str(api_err)}")
+                     print(f"API Error: {str(api_err)}")
                      return Command(
                         update={
                             "messages": [
@@ -277,14 +269,14 @@ print(json.dumps(result))
 
                 # After downloading from API, upload to S3 from file
                 try:
-                    log_step("Uploading to S3...")
+                    print("Uploading to S3...")
                     s3.upload_file(
                         Filename=temp_path,
                         Bucket=input_bucket,
                         Key=s3_key,
                         ExtraArgs={"ContentType": "application/parquet"},
                     )
-                    log_step("S3 Upload complete")
+                    print("S3 Upload complete")
                 except Exception as upload_err:
                     print(
                         f"Warning: Failed to upload dataset to S3: {upload_err}. Dataset is being loaded into workspace anyway..."
@@ -293,10 +285,10 @@ print(json.dumps(result))
             # Clean up temp file
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-            log_step("Cleanup complete")
+            print("Cleanup complete")
 
         # Write dataset directly to sandbox using executor.execute()
-        log_step("Encoding base64...")
+        print("Encoding base64...")
         data_b64 = base64.b64encode(data_bytes).decode("utf-8")
         # Use repr() to safely pass the base64 string in the f-string
         write_code = f"""
