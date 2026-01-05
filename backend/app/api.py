@@ -2739,31 +2739,31 @@ async def get_user_api_keys(user_id: str, session: AsyncSession = Depends(get_se
     logging.info(f"[API-KEYS] Starting fetch for user {user_id}")
     
     try:
-    result = await session.execute(
-        select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
-    )
+        result = await session.execute(
+            select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
+        )
         query_time = time.time() - start_time
         logging.info(f"[API-KEYS] Query completed in {query_time:.3f}s for user {user_id}")
         
-    user_keys = result.scalar_one_or_none()
+        user_keys = result.scalar_one_or_none()
 
-    if not user_keys:
+        if not user_keys:
             total_time = time.time() - start_time
             logging.info(f"[API-KEYS] No keys found. Total time: {total_time:.3f}s for user {user_id}")
-        return APIKeysResponse()
+            return APIKeysResponse()
 
         response = APIKeysResponse(
-        openai_key=(
-            mask_api_key(decrypt_api_key(user_keys.openai_key))
-            if user_keys.openai_key
-            else None
-        ),
-        anthropic_key=(
-            mask_api_key(decrypt_api_key(user_keys.anthropic_key))
+            openai_key=(
+                mask_api_key(decrypt_api_key(user_keys.openai_key))
+                if user_keys.openai_key
+                else None
+            ),
+            anthropic_key=(
+                mask_api_key(decrypt_api_key(user_keys.anthropic_key))
             if user_keys.anthropic_key
-            else None
-        ),
-    )
+                else None
+            ),
+        )
         
         total_time = time.time() - start_time
         logging.info(f"[API-KEYS] Success. Total time: {total_time:.3f}s for user {user_id}")
@@ -2829,29 +2829,29 @@ async def get_user_api_keys_raw(
     logging.info(f"[API-KEYS-RAW] Starting fetch for user {user_id}")
     
     try:
-    result = await session.execute(
-        select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
-    )
+        result = await session.execute(
+            select(UserAPIKeys).where(UserAPIKeys.user_id == user_id)
+        )
         query_time = time.time() - start_time
         logging.info(f"[API-KEYS-RAW] Query completed in {query_time:.3f}s for user {user_id}")
         
-    user_keys = result.scalar_one_or_none()
+        user_keys = result.scalar_one_or_none()
 
-    if not user_keys:
+        if not user_keys:
             total_time = time.time() - start_time
             logging.info(f"[API-KEYS-RAW] No keys found. Total time: {total_time:.3f}s for user {user_id}")
-        return {"openai_key": None, "anthropic_key": None}
+            return {"openai_key": None, "anthropic_key": None}
 
         response = {
-        "openai_key": (
-            decrypt_api_key(user_keys.openai_key) if user_keys.openai_key else None
-        ),
-        "anthropic_key": (
-            decrypt_api_key(user_keys.anthropic_key)
-            if user_keys.anthropic_key
-            else None
-        ),
-    }
+            "openai_key": (
+                decrypt_api_key(user_keys.openai_key) if user_keys.openai_key else None
+            ),
+            "anthropic_key": (
+                decrypt_api_key(user_keys.anthropic_key)
+                if user_keys.anthropic_key
+                else None
+            ),
+        }
         
         total_time = time.time() - start_time
         logging.info(f"[API-KEYS-RAW] Success. Total time: {total_time:.3f}s for user {user_id}")
