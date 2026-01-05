@@ -84,7 +84,7 @@ def driver_program():
     # Check if S3 upload is disabled (for testing)
     disable_s3_upload = os.getenv("S3_DISABLE_UPLOAD", "0") == "1"
 
-    # Initialize S3 client with Signature Version 4 (only if upload is enabled)
+    # Initialize S3 client with Signature Version 4 and timeouts (only if upload is enabled)
     if not disable_s3_upload:
         # Import boto3 only when needed to avoid credential issues in CI
         import boto3
@@ -92,7 +92,13 @@ def driver_program():
         
         region = os.getenv("AWS_REGION", "eu-central-1")
         s3_client = boto3.client(
-            "s3", region_name=region, config=Config(signature_version="s3v4")
+            "s3",
+            region_name=region,
+            config=Config(
+                signature_version="s3v4",
+                connect_timeout=5,
+                read_timeout=10
+            )
         )
         s3_bucket = os.getenv("S3_BUCKET", "lg-urban-prod")
     else:
@@ -110,23 +116,11 @@ def driver_program():
     except Exception:
         pass
 
-    # DEBUG LOG
-    print("DEBUG: Driver starting...", file=sys.stderr, flush=True)
-
     while True:
         try:
-            # DEBUG LOG
-            print("DEBUG: Waiting for command on stdin...", file=sys.stderr, flush=True)
-            
-            # Read command from stdin
-            line = sys.stdin.readline()
-            if not line:
-                print("Driver: EOF received, exiting gracefully", file=sys.stderr, flush=True)
-                break
-            
-            print(f"DEBUG: Received command length: {len(line)}", file=sys.stderr, flush=True)
-
-            command = json.loads(line.strip())
+            # Use input() like Modal's example - cleaner than sys.stdin.readline()
+            line = input()
+            command = json.loads(line)
 
             if (code := command.get("code")) is None:
                 result = {
@@ -146,16 +140,29 @@ def driver_program():
                 except Exception as e:
                     print(f"Execution Error: {e}", file=sys.stderr)
 
-            # Scan and upload artifacts after execution
+            # Scan and upload artifacts after execution with timeout protection
+            artifacts = []
             try:
+                import signal
+                
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Artifact scan timed out")
+                
+                # Set 10 second timeout for artifact scanning
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(10)
+                
                 artifacts = scan_and_upload_artifacts(
                     processed_artifacts,
                     s3_bucket,
                     s3_client,
                     disable_upload=disable_s3_upload,
                 )
-            except Exception as e:
-                print(f"Artifact scan error: {e}", file=sys.stderr, flush=True)
+                
+                signal.alarm(0)  # Cancel alarm if completed successfully
+            except (TimeoutError, Exception):
+                # If artifact scan times out or fails, continue without artifacts
+                signal.alarm(0)  # Ensure alarm is cancelled
                 artifacts = []
 
             # Emit exactly one JSON line per command
@@ -167,19 +174,19 @@ def driver_program():
             # CRITICAL: flush=True to ensure immediate output
             print(json.dumps(result), flush=True)
 
-        except json.JSONDecodeError as e:
+        except EOFError:
+            # input() returns EOFError on EOF - exit gracefully
+            break
+        except json.JSONDecodeError:
             error_result = {
-                "error": f"Invalid JSON: {e}",
+                "error": "Invalid JSON",
                 "stdout": "",
                 "stderr": "",
                 "artifacts": [],
             }
             print(json.dumps(error_result), flush=True)
         except Exception as e:
-            # Log the error to stderr for debugging, then send error response
-            print(f"DRIVER FATAL ERROR: {e}", file=sys.stderr, flush=True)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
+            # Minimal error handling - don't pollute stderr with tracebacks
             error_result = {
                 "error": f"Driver error: {e}",
                 "stdout": "",
