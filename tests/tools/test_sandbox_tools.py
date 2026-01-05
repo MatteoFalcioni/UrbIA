@@ -38,8 +38,7 @@ load_dotenv()
 @pytest.fixture(scope="module")
 def test_session_id():
     """Create a single test session ID shared across all tests in this module."""
-    # Use a fixed UUID for all tests so they share the same Modal workspace
-    test_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    test_uuid = str(uuid.uuid4())  # use a random UUID for each test
     set_thread_id(test_uuid)
     session_id = str(test_uuid)
     yield session_id
@@ -248,10 +247,14 @@ class TestIntegrationFlow:
         dataset_id = f"integration-test-{test_session_id[:8]}"
         print(f"📥 Step 1: Loading dataset {dataset_id}...")
         
-        # Mock get_dataset_bytes to return test data
-        with patch("backend.graph.tools.sandbox_tools.get_dataset_bytes", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = test_dataset_bytes
-            
+        # Mock client.export_to_file to write test data to the temp file
+        import tempfile
+        async def mock_export_to_file(dataset_id, path, fmt="parquet"):
+            """Mock that writes test_dataset_bytes to the file path."""
+            with open(path, "wb") as f:
+                f.write(test_dataset_bytes)
+        
+        with patch("backend.graph.tools.sandbox_tools.client.export_to_file", side_effect=mock_export_to_file):
             load_cmd = await load_dataset_tool.coroutine(dataset_id, mock_runtime)
             load_result = json.loads(load_cmd.update["messages"][0].content)
         

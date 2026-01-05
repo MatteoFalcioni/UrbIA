@@ -165,7 +165,7 @@ async def test_load_dataset_from_s3(test_executor, test_session_id):
     session_id = test_session_id
     print(f"Session ID 2: {session_id}")
     
-    dataset_id = "alberi-manutenzioni"
+    dataset_id = "temperature_bologna"
     
     # Download from S3
     print(f"Downloading dataset from S3: {dataset_id}")

@@ -464,14 +464,12 @@ def make_graph(
 
     async def supervisor_node(state: MyState):
         print("[GRAPH] Entering supervisor_node")
-        try:
-            result = await supervisor_agent.ainvoke(state)
-            # Supervisor returns a Command, so we just return it
-            print("[GRAPH] Supervisor completed step")
-            return result
-        except Exception as e:
-            print(f"[GRAPH] Supervisor FAILED: {e}")
-            raise
+
+        result = await supervisor_agent.ainvoke(state)
+        # Supervisor returns a Command, so we just return it
+        print("[GRAPH] Supervisor completed step")
+        return result
+        # supervisor with tool for rerouting is interpreted as error but its not
 
     builder.add_node(
         "supervisor", supervisor_node
