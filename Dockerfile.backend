@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY alembic.ini .
 
+# Copy tests
+COPY tests/ ./tests/
+
 # Expose backend API port
 EXPOSE 8000
 
