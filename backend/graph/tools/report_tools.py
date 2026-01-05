@@ -26,7 +26,7 @@ def write_report_tool(
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
-            "reports": [report_dict],
+            "reports": report_dict,
             "last_report_title": report_title,
         }
     )
