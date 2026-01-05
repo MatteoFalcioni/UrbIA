@@ -259,3 +259,22 @@ class BolognaOpenData:
                 await _stream_download()
             else:
                 raise
+
+    async def export(self, dataset_id: str, fmt: str = "parquet") -> bytes:
+        """
+        Download the full dataset in one file (no row limit).
+        kept for backward compatibility.
+        """
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = tmp.name
+        
+        try:
+            await self.export_to_file(dataset_id, tmp_path, fmt)
+            with open(tmp_path, "rb") as f:
+                return f.read()
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)

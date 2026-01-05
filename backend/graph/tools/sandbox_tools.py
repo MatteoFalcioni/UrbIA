@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import json
 import base64
+import asyncio
 from typing import Dict
 from typing_extensions import Annotated
 
@@ -142,7 +143,9 @@ else:
 print(json.dumps(result))
 """
     print("DEBUG: Calling executor.execute()...")
-    check_result = executor.execute(check_code)
+    # Run blocking executor.execute() in thread pool to avoid blocking event loop
+    loop = asyncio.get_running_loop()
+    check_result = await loop.run_in_executor(None, executor.execute, check_code)
     print("DEBUG: Executor executed.")
     stdout = check_result.get("stdout", "").strip()
 
@@ -327,7 +330,11 @@ result = {{
 
 print(json.dumps(result))
 """
-        write_result = executor.execute(write_code)
+        print("Executing write code in sandbox...")
+        # Run blocking executor.execute() in thread pool
+        loop = asyncio.get_running_loop()
+        write_result = await loop.run_in_executor(None, executor.execute, write_code)
+        print("Write code executed")
 
         stdout = write_result.get("stdout", "").strip()
         stderr = write_result.get("stderr", "")
