@@ -9,7 +9,6 @@ def list_add_dicts(
     Add a new item to a list. No deduplication.
     Used for:
         * code: running the same code twice is meaningful;
-        * reports: we want to accumulate several reports over different analysis
     
     Added reset: if we pass an empty list, and left is not empty, it will return [].
     """
@@ -22,6 +21,27 @@ def list_add_dicts(
         return []
 
     return left + right
+
+
+def dict_merge(
+    left: dict[str, str] | None = None, right: dict[str, str] | None = None
+) -> dict[str, str]:
+    """
+    Merge two dicts. Right overwrites left for duplicate keys.
+    Used for:
+        * reports: we want to accumulate several reports over different analyses
+    
+    Added reset: if we pass an empty dict, and left is not empty, it will return {}.
+    """
+    if left is None:
+        left = {}
+    if right is None:
+        right = {}
+
+    if left is not None and len(right) == 0:
+        return {}
+
+    return {**left, **right}
 
 
 def list_replace(left: list[str] | None, right: list[str] | None) -> list[str]:
@@ -103,7 +123,7 @@ class MyState(AgentState):
             list of dataset ids used in the analysis;
         * reports (`dict[str, str]`): 
             dict of reports written by the report writer agent. 
-            They accumulate over different analyses;
+            Key is title, value is content. They accumulate over different analyses;
         * last_report_title (`str`): 
             title of the last report written;
         * code_logs (`list[dict[str, str]]`): 
@@ -132,7 +152,7 @@ class MyState(AgentState):
         list[str], list_replace
     ]  # list of dataset ids; NOTE: we are replacing the list of sources entirely after each analysis
     reports: Annotated[
-        dict, list_add_dicts
+        dict[str, str], dict_merge
     ]  # key is the title, value is the content
     last_report_title: Annotated[str, str_replace]  # title of the last report written
     code_logs: Annotated[
