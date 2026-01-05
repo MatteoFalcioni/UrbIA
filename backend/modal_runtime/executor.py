@@ -15,7 +15,10 @@ class SandboxExecutor:
         self.session_id = session_id
         self.env = env or {}
         
+        print(f"[EXECUTOR] Initializing for session {session_id}")
+        
         # Create per-session volume for persistent workspace
+        print("[EXECUTOR] Getting volume...")
         self.volume = modal.Volume.from_name(volume_name(), create_if_missing=True)
         base_dir = session_base_dir(session_id)
         
@@ -25,7 +28,10 @@ class SandboxExecutor:
             secrets.append(modal.Secret.from_name("aws-credentials-IAM"))
         
         # Important: fixed sandbox creation by hydrating the Modal App inline (required outside Modal containers).
+        print("[EXECUTOR] Looking up app...")
         hydrated_app = modal.App.lookup("lg-urban-executor", create_if_missing=True)
+        
+        print(f"[EXECUTOR] Creating sandbox (image: {image})...")
         self.sandbox = modal.Sandbox.create(
             app=hydrated_app,
             image=image,
@@ -35,11 +41,14 @@ class SandboxExecutor:
             workdir=base_dir,  # NEW: per session cwd
             secrets=secrets,  # AWS creds for S3 uploads (optional)
         )
+        print(f"[EXECUTOR] Sandbox created: {self.sandbox.object_id}")
 
         # ensure per-session dir exists before starting the driver
+        print("[EXECUTOR] Creating base dir...")
         self.sandbox.exec("mkdir", "-p", base_dir).wait()
 
         # Start driver with optional environment variables
+        print("[EXECUTOR] Starting driver process...")
         self.process = self.sandbox.exec(
             "python",
             "-u",  # Force unbuffered output to prevent hangs in CI
@@ -48,6 +57,7 @@ class SandboxExecutor:
             workdir=base_dir,  # Set working directory for driver process
             env=self.env,  # Pass custom env vars to driver process
         )
+        print("[EXECUTOR] Driver started.")
 
     def execute(self, code: str, timeout: int = 120) -> Dict[str, Any]:
         """Execute code and return results.
@@ -66,22 +76,27 @@ class SandboxExecutor:
         NOTE: The driver handles all artifact scanning and S3 upload, so we just need to send the code and return the response.
         """
         try:
+            print(f"[EXECUTOR] Executing code (len={len(code)})...")
             # Send command to driver
             command = json.dumps({"code": code})
             command_with_newline = command + "\n"
 
             # Write in chunks to avoid buffer overflow for large datasets
             chunk_size = 8192  # 8KB chunks - safe size for Modal's buffer
+            print(f"[EXECUTOR] Writing {len(command_with_newline)} bytes to stdin...")
             for i in range(0, len(command_with_newline), chunk_size):
                 chunk = command_with_newline[i : i + chunk_size]
                 self.process.stdin.write(chunk)
                 self.process.stdin.drain()  # Flush after each chunk to prevent buffer overflow
-
+            
+            print("[EXECUTOR] Waiting for response from stdout...")
             # Read response line - use iter() to get next line from stdout
             result_line = next(iter(self.process.stdout), None)
+            print(f"[EXECUTOR] Got response line: {result_line[:50] if result_line else 'None'}...")
 
             if not result_line:
                 # Try to read stderr to see why the driver terminated
+                print("[EXECUTOR] Stream closed, reading stderr...")
                 stderr_lines = []
                 try:
                     # Read all available stderr lines (non-blocking)
@@ -93,6 +108,7 @@ class SandboxExecutor:
                     pass
                 
                 stderr_output = "".join(stderr_lines) if stderr_lines else "No stderr output captured"
+                print(f"[EXECUTOR] Stderr captured: {stderr_output}")
                 
                 # Check if process is still running
                 try:
@@ -118,6 +134,7 @@ class SandboxExecutor:
                 "artifacts": [],
             }
         except Exception as e:
+            print(f"[EXECUTOR] Exception during execution: {e}")
             return {
                 "stdout": "",
                 "stderr": f"Execution failed: {str(e)}",

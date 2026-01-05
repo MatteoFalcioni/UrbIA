@@ -227,7 +227,13 @@ print(json.dumps(result))
 
         region = os.getenv("AWS_REGION", "eu-central-1")
         s3 = boto3.client(
-            "s3", region_name=region, config=Config(signature_version="s3v4")
+            "s3",
+            region_name=region,
+            config=Config(
+                signature_version="s3v4",
+                connect_timeout=10,
+                read_timeout=30
+            )
         )
         input_bucket = os.getenv("S3_BUCKET")
         if not input_bucket:
@@ -607,10 +613,18 @@ else:
     mime = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
     size = len(data)
     
-    # Upload to S3
+    # Upload to S3 with timeout
     s3_key = f"output/datasets/{{sha256[:2]}}/{{sha256[2:4]}}/{{sha256}}"
     region = "eu-central-1"
-    s3_client = boto3.client("s3", region_name=region, config=Config(signature_version='s3v4'))
+    s3_client = boto3.client(
+        "s3",
+        region_name=region,
+        config=Config(
+            signature_version='s3v4',
+            connect_timeout=10,
+            read_timeout=30
+        )
+    )
     s3_client.put_object(
         Bucket="{bucket}",
         Key=s3_key,
