@@ -6,6 +6,7 @@ import os
 import json
 import base64
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 from typing_extensions import Annotated
 
@@ -24,13 +25,40 @@ from backend.graph.context import get_thread_id
 # Session-based executor cache: one sandbox per session
 _executor_cache: Dict[str, SandboxExecutor] = {}
 
+# Thread pool for blocking Modal operations
+_modal_thread_pool = ThreadPoolExecutor(max_workers=4)
+
 
 # ===== executor management =====
+def _create_executor_sync(session_id: str) -> SandboxExecutor:
+    """Synchronously create a SandboxExecutor (blocking - runs in thread pool)."""
+    return SandboxExecutor(session_id=session_id)
+
+
 def get_or_create_executor(session_id: str) -> SandboxExecutor:
-    """Get existing executor for session or create new one."""
+    """Get existing executor for session or create new one.
+    
+    WARNING: If executor doesn't exist, this BLOCKS while creating the sandbox.
+    Use async_get_or_create_executor() in async contexts to avoid blocking the event loop.
+    """
     if session_id not in _executor_cache:
         _executor_cache[session_id] = SandboxExecutor(session_id=session_id)
     return _executor_cache[session_id]
+
+
+async def async_get_or_create_executor(session_id: str) -> SandboxExecutor:
+    """Async version that creates executor in thread pool to avoid blocking event loop.
+    
+    Use this in async tools to prevent the Modal sandbox creation from blocking FastAPI.
+    """
+    if session_id in _executor_cache:
+        return _executor_cache[session_id]
+    
+    # Create executor in thread pool to avoid blocking
+    loop = asyncio.get_running_loop()
+    executor = await loop.run_in_executor(_modal_thread_pool, _create_executor_sync, session_id)
+    _executor_cache[session_id] = executor
+    return executor
 
 
 def terminate_session_executor(session_id: str) -> None:
@@ -47,7 +75,7 @@ def terminate_session_executor(session_id: str) -> None:
 # execute code tool
 # -----------------
 @tool(name_or_callable="execute_code", description="Use this to execute python code.")
-def execute_code_tool(
+async def execute_code_tool(
     code: Annotated[str, "The python code to execute."], runtime: ToolRuntime
 ) -> Command:
     """Use this to execute python code."""
@@ -65,8 +93,12 @@ def execute_code_tool(
         )
 
     session_id = str(thread_id)
-    executor = get_or_create_executor(session_id)
-    result = executor.execute(code)
+    # Use async version to avoid blocking event loop during sandbox creation
+    executor = await async_get_or_create_executor(session_id)
+    
+    # Run blocking executor.execute() in thread pool
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, executor.execute, code)
 
     # take out artifacts from result and use artifact field of ToolMessage to return them
     artifacts = result.pop("artifacts")
@@ -123,7 +155,8 @@ async def load_dataset_tool(
             }
         )
     session_id = str(thread_id)
-    executor = get_or_create_executor(session_id)
+    # Use async version to avoid blocking event loop during sandbox creation
+    executor = await async_get_or_create_executor(session_id)
 
     print(f"Checking if dataset {dataset_id} is already loaded...")
 
@@ -412,7 +445,7 @@ print(json.dumps(result))
     name_or_callable="list_loaded_datasets",
     description="List datasets already loaded in the current workspace.",
 )
-def list_loaded_datasets_tool(runtime: ToolRuntime) -> Command:
+async def list_loaded_datasets_tool(runtime: ToolRuntime) -> Command:
     """
     Lists datasets already loaded in the current workspace.
     NOTE: we do not list S3 datasets because we don't want the model to get confused.
@@ -434,7 +467,8 @@ def list_loaded_datasets_tool(runtime: ToolRuntime) -> Command:
 
     try:
         session_id = str(thread_id)
-        executor = get_or_create_executor(session_id)
+        # Use async version to avoid blocking event loop during sandbox creation
+        executor = await async_get_or_create_executor(session_id)
 
         # List datasets directly in the sandbox
         list_code = """
@@ -450,7 +484,9 @@ else:
 
 print(json.dumps(files))
 """
-        result = executor.execute(list_code)
+        # Run blocking executor.execute() in thread pool
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, executor.execute, list_code)
 
         # Parse JSON from stdout
         stdout = result.get("stdout", "").strip()
@@ -514,7 +550,7 @@ print(json.dumps(files))
     name_or_callable="export_dataset",
     description="Use this to export a dataset from the sandbox given its path.",
 )
-def export_dataset_tool(
+async def export_dataset_tool(
     dataset_path: Annotated[str, "The path of the dataset to export."],
     runtime: ToolRuntime,
 ) -> Command:
@@ -596,8 +632,12 @@ print(json.dumps(result))
 """
 
     # Execute the export code in the sandbox
-    executor = get_or_create_executor(session_id)
-    result = executor.execute(export_code)
+    # Use async version to avoid blocking event loop during sandbox creation
+    executor = await async_get_or_create_executor(session_id)
+    
+    # Run blocking executor.execute() in thread pool
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, executor.execute, export_code)
 
     # The result will be in stdout as JSON
     stdout = result.get("stdout", "").strip()

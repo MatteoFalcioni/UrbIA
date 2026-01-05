@@ -168,11 +168,11 @@ export async function saveUserApiKeys(userId: string, keys: APIKeys): Promise<AP
   const res = await fetchWithTimeout(
     `${BASE_URL}/users/${userId}/api-keys`,
     {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(keys),
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(keys),
     },
     10000
   );
