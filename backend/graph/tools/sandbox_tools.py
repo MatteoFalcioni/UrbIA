@@ -141,8 +141,12 @@ else:
     result = {{"exists": False, "path": str(dataset_path)}}
 print(json.dumps(result))
 """
+    print("DEBUG: Calling executor.execute()...")
     check_result = executor.execute(check_code)
+    print("DEBUG: Executor executed.")
     stdout = check_result.get("stdout", "").strip()
+
+    print(f"Check result: {stdout}")
 
     try:
         check_data = json.loads(stdout) if stdout else {}
