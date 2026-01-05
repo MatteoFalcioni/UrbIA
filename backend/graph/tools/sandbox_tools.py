@@ -96,9 +96,24 @@ async def execute_code_tool(
     # Use async version to avoid blocking event loop during sandbox creation
     executor = await async_get_or_create_executor(session_id)
     
-    # Run blocking executor.execute() in thread pool
+    # Run blocking executor.execute() in thread pool with timeout
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, executor.execute, code)
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, executor.execute, code),
+            timeout=120.0  # 2 minute timeout for code execution
+        )
+    except asyncio.TimeoutError:
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        content="Error: Code execution timed out after 120 seconds. The sandbox may be unresponsive or the code is taking too long.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
 
     # take out artifacts from result and use artifact field of ToolMessage to return them
     artifacts = result.pop("artifacts")
@@ -178,8 +193,24 @@ print(json.dumps(result))
     print("DEBUG: Calling executor.execute()...")
     # Run blocking executor.execute() in thread pool to avoid blocking event loop
     loop = asyncio.get_running_loop()
-    check_result = await loop.run_in_executor(None, executor.execute, check_code)
-    print("DEBUG: Executor executed.")
+    try:
+        check_result = await asyncio.wait_for(
+            loop.run_in_executor(None, executor.execute, check_code),
+            timeout=60.0  # 60 second timeout for the check operation
+        )
+        print("DEBUG: Executor executed.")
+    except asyncio.TimeoutError:
+        print("ERROR: Executor timed out after 60 seconds")
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        content=f"Error: Timeout checking if dataset '{dataset_id}' exists. The sandbox may be unresponsive.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
     stdout = check_result.get("stdout", "").strip()
 
     print(f"Check result: {stdout}")
@@ -370,10 +401,25 @@ result = {{
 print(json.dumps(result))
 """
         print("Executing write code in sandbox...")
-        # Run blocking executor.execute() in thread pool
+        # Run blocking executor.execute() in thread pool with timeout
         loop = asyncio.get_running_loop()
-        write_result = await loop.run_in_executor(None, executor.execute, write_code)
-        print("Write code executed")
+        try:
+            write_result = await asyncio.wait_for(
+                loop.run_in_executor(None, executor.execute, write_code),
+                timeout=120.0  # 2 minute timeout for writing dataset
+            )
+            print("Write code executed")
+        except asyncio.TimeoutError:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Error: Timeout writing dataset '{dataset_id}' to sandbox. The sandbox may be unresponsive.",
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
 
         stdout = write_result.get("stdout", "").strip()
         stderr = write_result.get("stderr", "")
@@ -490,9 +536,24 @@ else:
 
 print(json.dumps(files))
 """
-        # Run blocking executor.execute() in thread pool
+        # Run blocking executor.execute() in thread pool with timeout
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, executor.execute, list_code)
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, executor.execute, list_code),
+                timeout=30.0  # 30 second timeout for listing datasets
+            )
+        except asyncio.TimeoutError:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content="Error: Timeout listing loaded datasets. The sandbox may be unresponsive.",
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
 
         # Parse JSON from stdout
         stdout = result.get("stdout", "").strip()
@@ -649,9 +710,24 @@ print(json.dumps(result))
     # Use async version to avoid blocking event loop during sandbox creation
     executor = await async_get_or_create_executor(session_id)
     
-    # Run blocking executor.execute() in thread pool
+    # Run blocking executor.execute() in thread pool with timeout
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, executor.execute, export_code)
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, executor.execute, export_code),
+            timeout=120.0  # 2 minute timeout for exporting dataset
+        )
+    except asyncio.TimeoutError:
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        content=f"Error: Timeout exporting dataset from '{dataset_path}'. The sandbox may be unresponsive or S3 upload is slow.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
 
     # The result will be in stdout as JSON
     stdout = result.get("stdout", "").strip()
