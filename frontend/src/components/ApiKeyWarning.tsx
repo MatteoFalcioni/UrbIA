@@ -25,8 +25,8 @@ export function ApiKeyWarning() {
       
       // Check if any keys exist in the store
       const hasKeys = apiKeys.openai || apiKeys.anthropic;
-      setShowWarning(!hasKeys);
-      setIsChecking(false);
+        setShowWarning(!hasKeys);
+        setIsChecking(false);
     }, 500); // Small delay to let the loader hook finish
 
     return () => clearTimeout(timer);
