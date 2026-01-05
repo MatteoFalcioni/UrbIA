@@ -58,6 +58,11 @@ class SandboxExecutor:
             env=self.env,  # Pass custom env vars to driver process
         )
         print("[EXECUTOR] Driver started.")
+        
+        # CRITICAL: Create stdout iterator ONCE and reuse it for all reads
+        # Creating a new iterator on each execute() call breaks the state
+        self.stdout_reader = iter(self.process.stdout)
+        print("[EXECUTOR] Stdout iterator created.")
 
     def execute(self, code: str, timeout: int = 120) -> Dict[str, Any]:
         """Execute code and return results.
@@ -90,8 +95,8 @@ class SandboxExecutor:
                 self.process.stdin.drain()  # Flush after each chunk to prevent buffer overflow
             
             print("[EXECUTOR] Waiting for response from stdout...")
-            # Read response line - use iter() to get next line from stdout
-            result_line = next(iter(self.process.stdout), None)
+            # Use the stored iterator (created once in __init__) instead of creating new one
+            result_line = next(self.stdout_reader, None)
             print(f"[EXECUTOR] Got response line: {result_line[:50] if result_line else 'None'}...")
 
             if not result_line:
