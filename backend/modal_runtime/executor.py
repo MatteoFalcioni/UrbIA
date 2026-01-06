@@ -8,7 +8,13 @@ from .session import volume_name, session_base_dir
 
 
 class SandboxExecutor:
-    """Manages per-session Modal Sandboxes with persistent state."""
+    """
+    Manages per-session Modal Sandboxes with persistent state.
+    
+    Args:
+        session_id (str): The ID of the session.
+        env (dict[str, str]): The environment variables to pass to the sandbox.
+    """
 
     def __init__(self, session_id: str, env: dict[str, str] | None = None):
 

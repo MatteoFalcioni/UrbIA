@@ -75,13 +75,13 @@ jobs:
           echo "Deploying Modal app to update driver.py..."
           modal deploy backend/modal_runtime/app.py
       
-      # - name: Test Modal sandbox executor (requires Modal tokens)
-      #   env:
-      #     MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-      #     MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      #   run: |
-      #     echo "Testing Modal sandbox executor..."
-      #     pytest backend/modal_runtime/tests/test_sandbox.py -v --tb=short -s
+      - name: Test Modal sandbox executor (requires Modal tokens)
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          echo "Testing Modal sandbox executor..."
+          pytest backend/modal_runtime/tests/test_sandbox.py -v --tb=short -s
       
       - name: Test sandbox tools (integration tests with executor.execute)
         env:
