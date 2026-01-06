@@ -12,12 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+@pytest.mark.timeout(300)
 def test_export_dataset_from_inside_sandbox():
     """Test that we can export a dataset by running export code inside the sandbox."""
-    # Skip in CI
-    if os.getenv("CI") == "true":
-        pytest.skip("Flaky in CI due to buffering issues")
-
     # Require Modal tokens to run this real integration test
     if not (os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")):
         pytest.skip("Modal tokens not configured; skipping real Modal integration test")
@@ -172,12 +169,9 @@ print(json.dumps(result))
         executor.terminate()
 
 
+@pytest.mark.timeout(300)
 def test_export_dataset_tool_integration():
     """Test the actual export_dataset_tool works with the sandbox."""
-    # Skip in CI
-    if os.getenv("CI") == "true":
-        pytest.skip("Flaky in CI due to buffering issues")
-
     # Require Modal tokens to run this real integration test
     if not (os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")):
         pytest.skip("Modal tokens not configured; skipping real Modal integration test")
