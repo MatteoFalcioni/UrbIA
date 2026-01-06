@@ -92,7 +92,8 @@ def _have_full_config() -> bool:
 class TestExecuteCodeTool:
     """Tests for execute_code_tool - actually executes code in Modal sandbox."""
     
-    @pytest.mark.skipif(not _have_modal_tokens() or os.getenv("CI") == "true", reason="Modal tokens not configured or CI env flaky")
+    @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
+    @pytest.mark.timeout(180)
     def test_execute_simple_code(self, test_session_id, mock_runtime):
         """Test executing simple Python code in real Modal sandbox."""
         print(f"\n🚀 Testing simple code execution in session {test_session_id[:8]}...")
@@ -119,7 +120,8 @@ class TestExecuteCodeTool:
         # Should not have errors
         assert not result.get("stderr") or result["stderr"] == ""
     
-    @pytest.mark.skipif(not _have_modal_tokens() or os.getenv("CI") == "true", reason="Modal tokens not configured or CI flaky")
+    @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
+    @pytest.mark.timeout(180)
     def test_execute_code_persists_state(self, test_session_id, mock_runtime):
         """Test that Python state actually persists across executions in same session."""
         print(f"\n🔄 Testing state persistence in session {test_session_id[:8]}...")
@@ -140,7 +142,8 @@ class TestExecuteCodeTool:
         print(f"📊 Second execution: {result2}")
         assert "x + 1 = 43" in result2["stdout"]
     
-    @pytest.mark.skipif(not _have_modal_tokens() or os.getenv("CI") == "true", reason="Modal tokens not configured or CI flaky")
+    @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
+    @pytest.mark.timeout(180)
     def test_execute_code_with_pandas(self, test_session_id, mock_runtime):
         """Test executing code with pandas (verify packages available)."""
         print(f"\n🐼 Testing pandas in session {test_session_id[:8]}...")
@@ -158,7 +161,8 @@ print(df.to_string())
         print(f"📊 Result: {result}")
         assert "DataFrame shape: (3, 2)" in result["stdout"]
     
-    @pytest.mark.skipif(not _have_modal_tokens() or os.getenv("CI") == "true", reason="Modal tokens not configured or CI flaky")
+    @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
+    @pytest.mark.timeout(180)
     def test_execute_code_with_error(self, test_session_id, mock_runtime):
         """Test executing code that raises an error."""
         print(f"\n❌ Testing error handling in session {test_session_id[:8]}...")
@@ -176,7 +180,8 @@ print(df.to_string())
 class TestExecutorCacheManagement:
     """Tests for executor cache lifecycle."""
     
-    @pytest.mark.skipif(not _have_modal_tokens() or os.getenv("CI") == "true", reason="Modal tokens not configured or CI flaky")
+    @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
+    @pytest.mark.timeout(180)
     def test_executor_reused_within_session(self, test_session_id, mock_runtime):
         """Test that the same executor is reused for multiple calls in a session."""
         print(f"\n♻️  Testing executor reuse in session {test_session_id[:8]}...")
@@ -197,7 +202,8 @@ class TestExecutorCacheManagement:
         print(f"📦 Executor reused: {id(executor2)}")
         assert executor1 is executor2, "Executor should be reused for same session"
     
-    @pytest.mark.skipif(not _have_modal_tokens() or os.getenv("CI") == "true", reason="Modal tokens not configured or CI flaky")
+    @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
+    @pytest.mark.timeout(180)
     def test_terminate_session_executor(self, test_session_id, mock_runtime):
         """Test that terminate_session_executor properly cleans up."""
         # Save original thread_id
@@ -236,7 +242,8 @@ class TestExecutorCacheManagement:
 class TestIntegrationFlow:
     """End-to-end integration tests using real Modal and S3."""
     
-    @pytest.mark.skipif(not _have_full_config() or os.getenv("CI") == "true", reason="Modal and S3 not fully configured or CI flaky")
+    @pytest.mark.skipif(not _have_full_config(), reason="Modal and S3 not fully configured")
+    @pytest.mark.timeout(300)
     async def test_full_workflow_load_and_analyze(self, test_session_id, mock_runtime, test_dataset_bytes):
         """Test a full workflow: load dataset (mock API), analyze with code, export to S3."""
         print(f"\n🔄 Testing full workflow in session {test_session_id[:8]}...")

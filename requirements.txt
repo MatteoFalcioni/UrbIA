@@ -8,6 +8,7 @@ python-dotenv
 httpx[http2]
 pytest
 pytest-asyncio
+pytest-timeout
 langgraph
 langchain
 langchain-openai
