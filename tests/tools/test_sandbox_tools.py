@@ -89,19 +89,20 @@ def _have_full_config() -> bool:
     return _have_modal_tokens() and _have_s3_config()
 
 
+@pytest.mark.asyncio
 class TestExecuteCodeTool:
     """Tests for execute_code_tool - actually executes code in Modal sandbox."""
     
     @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
     @pytest.mark.timeout(180)
-    def test_execute_simple_code(self, test_session_id, mock_runtime):
+    async def test_execute_simple_code(self, test_session_id, mock_runtime):
         """Test executing simple Python code in real Modal sandbox."""
         print(f"\n🚀 Testing simple code execution in session {test_session_id[:8]}...")
         
         code = "result = 2 + 2\nprint(f'Result: {result}')"
         
-        # Call the underlying function using .func
-        command = execute_code_tool.func(code, mock_runtime)
+        # Call the tool via its async coroutine interface
+        command = await execute_code_tool.coroutine(code, mock_runtime)
         
         # Check that a Command was returned
         assert command is not None
@@ -122,13 +123,13 @@ class TestExecuteCodeTool:
     
     @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
     @pytest.mark.timeout(180)
-    def test_execute_code_persists_state(self, test_session_id, mock_runtime):
+    async def test_execute_code_persists_state(self, test_session_id, mock_runtime):
         """Test that Python state actually persists across executions in same session."""
         print(f"\n🔄 Testing state persistence in session {test_session_id[:8]}...")
         
         # First execution: define a variable
         code1 = "x = 42\nprint('Set x to 42')"
-        command1 = execute_code_tool.func(code1, mock_runtime)
+        command1 = await execute_code_tool.coroutine(code1, mock_runtime)
         result1 = json.loads(command1.update["messages"][0].content)
         
         print(f"📊 First execution: {result1}")
@@ -136,7 +137,7 @@ class TestExecuteCodeTool:
         
         # Second execution: use the variable (proves state persisted)
         code2 = "print(f'x + 1 = {x + 1}')"
-        command2 = execute_code_tool.func(code2, mock_runtime)
+        command2 = await execute_code_tool.coroutine(code2, mock_runtime)
         result2 = json.loads(command2.update["messages"][0].content)
         
         print(f"📊 Second execution: {result2}")
@@ -144,7 +145,7 @@ class TestExecuteCodeTool:
     
     @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
     @pytest.mark.timeout(180)
-    def test_execute_code_with_pandas(self, test_session_id, mock_runtime):
+    async def test_execute_code_with_pandas(self, test_session_id, mock_runtime):
         """Test executing code with pandas (verify packages available)."""
         print(f"\n🐼 Testing pandas in session {test_session_id[:8]}...")
         
@@ -155,7 +156,7 @@ print(f'DataFrame shape: {df.shape}')
 print(df.to_string())
 """
         
-        command = execute_code_tool.func(code, mock_runtime)
+        command = await execute_code_tool.coroutine(code, mock_runtime)
         result = json.loads(command.update["messages"][0].content)
         
         print(f"📊 Result: {result}")
@@ -163,13 +164,13 @@ print(df.to_string())
     
     @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
     @pytest.mark.timeout(180)
-    def test_execute_code_with_error(self, test_session_id, mock_runtime):
+    async def test_execute_code_with_error(self, test_session_id, mock_runtime):
         """Test executing code that raises an error."""
         print(f"\n❌ Testing error handling in session {test_session_id[:8]}...")
         
         code = "x = 1 / 0  # Division by zero"
         
-        command = execute_code_tool.func(code, mock_runtime)
+        command = await execute_code_tool.coroutine(code, mock_runtime)
         result = json.loads(command.update["messages"][0].content)
         
         print(f"📊 Error result: {result}")
@@ -177,17 +178,18 @@ print(df.to_string())
         assert "stderr" in result
         assert "division by zero" in result["stderr"].lower()
 
+@pytest.mark.asyncio
 class TestExecutorCacheManagement:
     """Tests for executor cache lifecycle."""
     
     @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
     @pytest.mark.timeout(180)
-    def test_executor_reused_within_session(self, test_session_id, mock_runtime):
+    async def test_executor_reused_within_session(self, test_session_id, mock_runtime):
         """Test that the same executor is reused for multiple calls in a session."""
         print(f"\n♻️  Testing executor reuse in session {test_session_id[:8]}...")
         
-        # First execution
-        execute_code_tool.func("x = 1", mock_runtime)
+        # First execution to create executor
+        await execute_code_tool.coroutine("x = 1", mock_runtime)
         
         # Check cache has our session
         assert test_session_id in _executor_cache
@@ -195,7 +197,7 @@ class TestExecutorCacheManagement:
         print(f"📦 Executor created: {id(executor1)}")
         
         # Second execution
-        execute_code_tool.func("y = 2", mock_runtime)
+        await execute_code_tool.coroutine("y = 2", mock_runtime)
         
         # Should be same executor instance
         executor2 = _executor_cache[test_session_id]
@@ -204,7 +206,7 @@ class TestExecutorCacheManagement:
     
     @pytest.mark.skipif(not _have_modal_tokens(), reason="Modal tokens not configured")
     @pytest.mark.timeout(180)
-    def test_terminate_session_executor(self, test_session_id, mock_runtime):
+    async def test_terminate_session_executor(self, test_session_id, mock_runtime):
         """Test that terminate_session_executor properly cleans up."""
         # Save original thread_id
         original_thread_id = get_thread_id()
@@ -217,7 +219,7 @@ class TestExecutorCacheManagement:
         
         try:
             # Execute code to create executor
-            execute_code_tool.func("x = 1", mock_runtime)
+            await execute_code_tool.coroutine("x = 1", mock_runtime)
             
             # Verify executor exists
             assert session_id in _executor_cache
@@ -275,7 +277,7 @@ class TestIntegrationFlow:
         
         # 2. List datasets
         print(f"📋 Step 2: Listing datasets...")
-        list_cmd = list_loaded_datasets_tool.func(mock_runtime)
+        list_cmd = await list_loaded_datasets_tool.coroutine(mock_runtime)
         list_result = json.loads(list_cmd.update["messages"][0].content)
         
         print(f"✅ Found {len(list_result)} datasets: {list_result}")
@@ -303,7 +305,7 @@ print(f'Largest city: {{max_city}}')
 print(f'Cities: {{", ".join(df["city"].tolist())}}')
 """
         
-        exec_cmd = execute_code_tool.func(code, mock_runtime)
+        exec_cmd = await execute_code_tool.coroutine(code, mock_runtime)
         exec_result = json.loads(exec_cmd.update["messages"][0].content)
         
         print(f"✅ Analysis result:\n{exec_result['stdout']}")
@@ -318,7 +320,7 @@ print(f'Cities: {{", ".join(df["city"].tolist())}}')
         
         # 4. Export dataset to S3 and verify
         print(f"📤 Step 4: Exporting dataset to S3...")
-        export_cmd = export_dataset_tool.func(dataset_path, mock_runtime)
+        export_cmd = await export_dataset_tool.coroutine(dataset_path, mock_runtime)
         export_result = json.loads(export_cmd.update["messages"][0].content)
         
         print(f"✅ Exported: {export_result.get('s3_url')}")
