@@ -18,7 +18,6 @@ from langgraph.types import Command, interrupt
 # if we pass state as is in the handoff, after having modified state previously, it will not be reset - of course, that's how LG is supposed to work: be stateful.
 # but this means then that we may want to perform some additional state management in the handoffs, like resetting state values.
 # (!) We will only do it for the analyst because it's the first agent that is hit in our workflow 
-# (unless the user specifically asks for a report, but that shouldn't mess up the flow -> TODO: check this)
 # -----------------------------
 
 
