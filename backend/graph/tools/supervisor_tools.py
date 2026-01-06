@@ -74,13 +74,43 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
 
         # Handle case where usr_response might be None or not properly structured
         if usr_response is None:
-            raise ValueError("Resume value is None - user might have cancelled the interrupt")
+            error_msg = "Resume value is None - user might have cancelled the interrupt"
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Error: {error_msg}",
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
         
         if not isinstance(usr_response, dict):
-            raise ValueError(f"Resume value must be a dict, got {type(usr_response)}: {usr_response}")
+            error_msg = f"Resume value must be a dict, got {type(usr_response)}: {usr_response}"
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Error: {error_msg}",
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
         
         if 'decision' not in usr_response:
-            raise ValueError(f"Resume value missing 'decision' key. Got: {usr_response}")
+            error_msg = f"Resume value missing 'decision' key. Got: {usr_response}"
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Error: {error_msg}",
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
 
         if usr_response['decision'] == "accept":
             goto = agent_name
@@ -105,7 +135,17 @@ def create_handoff_tool_HITL(*, agent_name: str, description: str | None = None)
                 )
             ]
         else: 
-            raise ValueError(f"Invalid user response: {usr_response['decision']}")
+            error_msg = f"Invalid user response: {usr_response['decision']}"
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Error: {error_msg}",
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
 
         state = runtime.state
 
