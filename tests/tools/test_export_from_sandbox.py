@@ -169,8 +169,9 @@ print(json.dumps(result))
         executor.terminate()
 
 
+@pytest.mark.asyncio
 @pytest.mark.timeout(300)
-def test_export_dataset_tool_integration():
+async def test_export_dataset_tool_integration():
     """Test the actual export_dataset_tool works with the sandbox."""
     # Require Modal tokens to run this real integration test
     if not (os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")):
@@ -209,8 +210,8 @@ print("Dataset created")
         mock_runtime = Mock()
         mock_runtime.tool_call_id = "test-call-123"
         
-        # Call the function directly
-        command = export_dataset_tool.func("datasets/tool_test.parquet", mock_runtime)
+        # Call the async tool via its coroutine
+        command = await export_dataset_tool.coroutine("datasets/tool_test.parquet", mock_runtime)
         
         # Extract the result
         tool_message = command.update["messages"][0]
